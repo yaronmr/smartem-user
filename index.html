@@ -1,0 +1,957 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Match Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+[hidden] { display: none !important; }
+/* Layout: a light-table desk. The request queue runs down the left, the two sections sit side by side on the
+   light table, and the pair ledger with its fit readout sits under them. Phones stack everything. */
+:root {
+  --bg: #edf0f1; --panel: #ffffff; --ink: #1b2328; --muted: #5a6770; --line: #ccd4d9;
+  --accent: #0b6e84; --accent-ink: #ffffff; --em-bg: #262b2f;
+  --ok: #2c7a3f; --warn: #a35a12; --bad: #b3261e; --info: #3c5fa8;
+  --ok-bg: #e3f1e6; --warn-bg: #f8ead8; --bad-bg: #f7e1df; --info-bg: #e3e9f6;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #14181b; --panel: #1c2226; --ink: #e2e8ec; --muted: #93a0a9; --line: #313a41;
+  --accent: #52b9d0; --accent-ink: #0c1215; --em-bg: #0a0c0d;
+  --ok: #6cc27f; --warn: #e3a25e; --bad: #f08a80; --info: #8eaaf0;
+  --ok-bg: #1d3324; --warn-bg: #3a2a18; --bad-bg: #3d1f1c; --info-bg: #1f2840; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #14181b; --panel: #1c2226; --ink: #e2e8ec; --muted: #93a0a9; --line: #313a41;
+  --accent: #52b9d0; --accent-ink: #0c1215; --em-bg: #0a0c0d;
+  --ok: #6cc27f; --warn: #e3a25e; --bad: #f08a80; --info: #8eaaf0;
+  --ok-bg: #1d3324; --warn-bg: #3a2a18; --bad-bg: #3d1f1c; --info-bg: #1f2840; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.45;
+  padding-inline: 16px; padding-block: 14px 40px; }
+.wrap { max-width: 1680px; margin: 0 auto; display: grid; gap: 14px; }
+header { display: grid; gap: 4px; }
+h1 { font-family: var(--display); font-weight: 600; font-size: 23px; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 16px; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 86ch; margin: 0; }
+.lede b { color: var(--ink); font-weight: 600; }
+.lab { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+button, select { font: inherit; color: var(--ink); }
+button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible, .req:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+.desk { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .desk { grid-template-columns: 1fr; } }
+.queue { display: grid; gap: 8px; }
+.queue .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.req { text-align: left; display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); cursor: pointer; width: 100%; }
+.req[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.req .t { font-weight: 600; }
+.req .why { color: var(--muted); font-size: 12.5px; }
+.req .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.p-open { background: var(--info-bg); color: var(--info); }
+.p-enough { background: var(--ok-bg); color: var(--ok); }
+.p-fitted { background: var(--ok-bg); color: var(--ok); }
+.p-accepted { background: var(--ok); color: var(--panel); }
+.p-paused { background: var(--warn-bg); color: var(--warn); }
+.p-new { background: var(--info-bg); color: var(--info); }
+.p-confirmed { background: var(--ok-bg); color: var(--ok); }
+.p-flagged { background: var(--warn-bg); color: var(--warn); }
+.p-rejected { background: var(--bad-bg); color: var(--bad); }
+.bench { display: grid; gap: 10px; min-width: 0; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 12px; }
+.tools label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+.status { font-size: 13px; min-height: 1.4em; }
+.status .pending { color: var(--warn); font-weight: 600; }
+.status .flag { color: var(--bad); font-weight: 600; }
+.viewers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 760px) { .viewers { grid-template-columns: 1fr; } }
+.viewer { min-width: 0; display: grid; gap: 4px; }
+.vhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.vhead .z { font-family: var(--display); font-size: 17px; font-weight: 600; }
+.vhead .xy { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stage { position: relative; height: min(62vh, 700px); min-height: 320px; background: var(--em-bg); border-radius: 6px;
+  overflow: hidden; touch-action: none; cursor: crosshair; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.lower { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 1250px) { .lower { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; display: grid; gap: 8px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+td.mono { font-family: var(--mono); font-size: 12.5px; }
+td input { font: inherit; width: 16ch; border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; background: var(--panel); color: var(--ink); }
+tr.sel td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+td .acts { display: inline-flex; gap: 4px; }
+td .acts button { padding: 1px 7px; font-size: 12.5px; }
+.who { display: inline-flex; align-items: center; gap: 5px; }
+.who img { width: 18px; height: 18px; border-radius: 50%; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 6px; border: 1px solid #000; }
+.err { color: var(--bad); font-weight: 600; }
+.empty { color: var(--muted); padding: 10px 2px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-variant-numeric: tabular-nums; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--mono); font-size: 12.5px; }
+.note { color: var(--muted); font-size: 12.5px; margin: 0; max-width: 80ch; }
+details.how { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+details.how summary { cursor: pointer; font-weight: 600; }
+details.how ol, details.how ul { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 3px; max-width: 90ch; }
+.account { gap: 8px; }
+.authform { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; }
+.authform .row { flex-basis: 100%; }
+.fld { display: grid; gap: 2px; }
+.fld input { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; min-width: 14ch; max-width: 100%; }
+.msg { color: var(--muted); font-size: 13px; flex-basis: 100%; }
+.who-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.mutedtxt { color: var(--muted); }
+.people { display: grid; gap: 8px; margin-top: 8px; }
+.people select { margin-left: 6px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+</head><body>
+<div class="wrap">
+  <header>
+    <h1>Match Desk</h1>
+    <p class="lede">Match the same spot on two neighbouring image sections. <b>Sign in to continue.</b> New accounts are approved by a referee before they can see or add anything.</p>
+  </header>
+
+  <details class="how">
+    <summary>How this works</summary>
+    <ol>
+      <li>Register with your email, confirm it from the email you get, and wait for a referee to approve your account. Until then you can look but not save.</li>
+      <li>Requests list the section pair and the area that needs matches, with a target number of pairs. Spread them over every cube outline.</li>
+      <li>Click a spot on one section, then the same tissue on the other. Drag a marker to move it, Esc cancels a half-made pair.</li>
+      <li>Each pair is checked as you add it: against the automatic correction once there is one (more than 15 px off), otherwise against the pairs around it (more than 27 px off). A pair that disagrees is marked <span class="pill p-flagged">flagged</span>: look again and move it or delete it. Pairs at the edge of the clicked area aren't judged until there are pairs around them.</li>
+      <li>Yellow dotted boxes are areas that need a minimum number of pairs. Orange diamonds are spots the automatic matching was least sure of: put one pair near each (it turns green).</li>
+      <li>Check other people's pairs: <b>Confirm</b> if it is the same tissue, <b>Dispute</b> if not. You can only move or delete your own pairs.</li>
+      <li>Some pairs are set aside at random to test the correction, so the fit is scored on points it never saw. You don't need to do anything about this.</li>
+      <li>Coordinates are full-resolution stack pixels (x, y, z). </li>
+    </ol>
+  </details>
+
+  <section class="card account" id="account" aria-label="Your account" aria-live="polite"></section>
+  <details class="how" id="staff" hidden><summary>People (referees and admins)</summary><div id="people" class="people"></div></details>
+
+  <div class="desk">
+    <aside class="queue" aria-labelledby="qH">
+      <div class="head"><h2 id="qH">Requests</h2><span class="lab" id="qCount"></span></div>
+      <div id="reqList"><p class="empty">Loading requests…</p></div>
+      <p class="note" id="saveNote">Connecting to the shared store…</p>
+    </aside>
+
+    <section class="bench" aria-label="Matching">
+      <div class="tools" role="toolbar" aria-label="Viewer settings">
+        <label for="linkMode"><span class="lab">Link views</span>
+          <select id="linkMode"><option value="off">Off</option><option value="local" selected>By nearby pairs</option><option value="shift">By mean shift</option></select></label>
+        <label for="hint"><input type="checkbox" id="hint" checked> Show predicted spot</label>
+        <label for="swap"><input type="checkbox" id="swap"> Flicker (hold F)</label>
+        <label for="bright"><span class="lab">Brightness</span> <input type="range" id="bright" min="60" max="160" value="100"></label>
+        <label for="contrast"><span class="lab">Contrast</span> <input type="range" id="contrast" min="60" max="220" value="115"></label>
+        <span class="row"><button id="cancel" type="button" hidden>Cancel point</button><button id="home" type="button">Back to start</button></span>
+      </div>
+      <div class="status" id="status" aria-live="polite"></div>
+      <div class="viewers">
+        <section class="viewer" aria-label="Left section">
+          <div class="vhead"><span class="z" id="zL">z —</span><span class="xy" id="xyL">—</span></div>
+          <div class="stage" id="stageL"><canvas id="imgL"></canvas><canvas id="ovL"></canvas></div>
+        </section>
+        <section class="viewer" aria-label="Right section">
+          <div class="vhead"><span class="z" id="zR">z —</span><span class="xy" id="xyR">—</span></div>
+          <div class="stage" id="stageR"><canvas id="imgR"></canvas><canvas id="ovR"></canvas></div>
+        </section>
+      </div>
+      <div class="lower">
+        <section class="card" aria-labelledby="pairsH">
+          <div class="row" style="justify-content:space-between"><h2 id="pairsH">Pairs for this request</h2>
+            <label class="row" for="showRej" style="color:var(--muted);font-size:13px"><input type="checkbox" id="showRej"> Show rejected</label></div>
+          <div class="tablewrap"><table>
+            <thead><tr><th>#</th><th>Left (x, y, z)</th><th>Right (x, y, z)</th><th>Shift</th><th title="How far the pair is from what its neighbouring pairs (or the automatic correction, once there is one) predict">Off from prediction</th><th>Status</th><th>By</th><th>Checks</th><th>Note</th><th></th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table></div>
+          <div class="empty" id="emptyRows">No pairs yet. Click a spot on the left section to start.</div>
+        </section>
+        <section class="card" aria-labelledby="fitH">
+          <h2 id="fitH">This request</h2>
+          <dl class="kv" id="fit"></dl>
+          <div class="lab">Pairs per cube</div>
+          <dl class="kv" id="cover"></dl>
+          <p class="note">"Off from prediction" compares each pair with the automatic correction once one exists (flag above 15 px). Before that, it predicts the pair from the pairs around it, leaving the pair itself out (flag above 27 px). Pairs at the edge of the clicked area are not judged, because the bend there can't be predicted from one side.</p>
+        </section>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const NOISE = 9, FLAG_K = 3, HOLDOUT_P = 0.2;            // landmark noise (px, leave-one-out), outlier factor, holdout share
+  const PAL = ["#ffd400", "#00e5ff", "#ff4fd8", "#7dff5a", "#ff8a1f", "#b08cff", "#ff3b3b", "#2bffc0", "#ffffff", "#5aa8ff"];
+  const $ = (id) => document.getElementById(id);
+
+  const S = {
+    db: null, me: null, email: null, profile: null, role: "none", admin: false, canWrite: false, names: {}, people: [],
+    recovery: false, dragging: false,
+    requests: [], pairs: [], rid: null, req: null,
+    link: "local", hint: true, flick: false, showRej: false,
+    view: { L: { cx: 0, cy: 0, s: 1 }, R: { cx: 0, cy: 0, s: 1 } },
+    pending: null, selected: null, profiles: {},
+  };
+
+  // ---------- images ----------
+  // Images and files are private: after login the page asks the database for links that work for one hour.
+  const imgs = {}, signed = {}, pend = new Set();
+  let signTimer = 0;
+  function url(path) { const e = signed[path]; return e && e.exp > Date.now() + 60000 ? e.url : null; }
+  function want(path) {
+    if (!session || !S.canWrite && S.role === "none") return;
+    pend.add(path);
+    if (!signTimer) signTimer = setTimeout(async () => {
+      const paths = Array.from(pend); pend.clear(); signTimer = 0;
+      try {
+        const r = await raw("POST", "/storage/v1/object/sign/md", { expiresIn: 3600, paths: paths }, await token());
+        for (const x of r) if (x.signedURL) signed[x.path] = { url: CFG.url + "/storage/v1" + x.signedURL, exp: Date.now() + 3600e3 };
+        refresh();
+      } catch (_) {}
+    }, 40);
+  }
+  function img(src) {
+    if (!src) return null;
+    if (imgs[src]) return imgs[src];
+    const u = url(src); if (!u) { want(src); return null; }
+    const im = new Image(); im.decoding = "async"; im.onload = drawAll; im.onerror = () => { delete imgs[src]; delete signed[src]; };
+    im.src = u; imgs[src] = im; return im;
+  }
+
+  // ---------- geometry ----------
+  function pairsOf(rid, withRejected) {
+    const out = [];
+    for (const p of S.pairs) if (p.rid === rid && (withRejected || p.status !== "rejected")) out.push(p);
+    out.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : (a.id < b.id ? -1 : 1)));
+    return out;
+  }
+  function wAffine(ps, w) {                     // weighted least-squares affine L -> R; null if degenerate
+    let sw = 0, mx = 0, my = 0, mu = 0, mv = 0;
+    ps.forEach((p, i) => { const k = w ? w[i] : 1; sw += k; mx += k * p.xl; my += k * p.yl; mu += k * p.xr; mv += k * p.yr; });
+    if (sw <= 0) return null;
+    mx /= sw; my /= sw; mu /= sw; mv /= sw;
+    let sxx = 0, sxy = 0, syy = 0, sxu = 0, syu = 0, sxv = 0, syv = 0;
+    ps.forEach((p, i) => {
+      const k = w ? w[i] : 1, x = p.xl - mx, y = p.yl - my, u = p.xr - mu, v = p.yr - mv;
+      sxx += k * x * x; sxy += k * x * y; syy += k * y * y; sxu += k * x * u; syu += k * y * u; sxv += k * x * v; syv += k * y * v;
+    });
+    const det = sxx * syy - sxy * sxy;
+    if (!(Math.abs(det) > 1e-6 * (sxx * syy + 1))) return { shift: true, dx: mu - mx, dy: mv - my };
+    const a = (sxu * syy - syu * sxy) / det, b = (syu * sxx - sxu * sxy) / det;
+    const d = (sxv * syy - syv * sxy) / det, e = (syv * sxx - sxv * sxy) / det;
+    return { a, b, c: mu - a * mx - b * my, d, e, f: mv - d * mx - e * my };
+  }
+  const apply = (A, x, y) => A.shift ? [x + A.dx, y + A.dy] : [A.a * x + A.b * y + A.c, A.d * x + A.e * y + A.f];
+  function sigmaOf() { return (S.req && S.req.sigma_px) || 700; }
+  function localModel(ps, x, y, skip) {         // affine fitted with Gaussian weights around (x, y)
+    const use = [], w = [], s2 = 2 * sigmaOf() * sigmaOf();
+    ps.forEach((p) => { if (p.id === skip) return; const d2 = (p.xl - x) ** 2 + (p.yl - y) ** 2; use.push(p); w.push(Math.exp(-d2 / s2) + 1e-4); });
+    if (!use.length) return null;
+    if (use.length < 4) { const A = wAffine(use, w); return A && !A.shift ? { shift: true, dx: sum(use.map((p, i) => w[i] * (p.xr - p.xl))) / sum(w), dy: sum(use.map((p, i) => w[i] * (p.yr - p.yl))) / sum(w) } : A; }
+    return wAffine(use, w);
+  }
+  const sum = (a) => a.reduce((s, x) => s + x, 0);
+  // The automatic correction for this request, when one exists (request.field: {file, tol_px}):
+  // a grid {x0, y0, step, nx, ny, dx[], dy[]} of left -> right displacements in stack px, sampled bilinearly.
+  const fields = {};
+  function fieldOf(R) {
+    if (!R || !R.field || !R.field.file) return null;
+    const f = fields[R.field.file];
+    if (f === undefined) {
+      const u = url(R.field.file); if (!u) { want(R.field.file); return null; }
+      fields[R.field.file] = null;
+      fetch(u).then((r) => r.ok ? r.json() : null).then((g) => { fields[R.field.file] = g || null; refresh(); }).catch(() => {});
+      return null;
+    }
+    return f;
+  }
+  // inv = false: a left point -> its predicted right point (dx, dy); inv = true: right -> left (inv_dx, inv_dy).
+  // null outside the solved mesh (a null node), so callers fall back to the pairs.
+  function fieldAt(g, x, y, inv) {
+    const fx = (x - g.x0) / g.step, fy = (y - g.y0) / g.step;
+    if (!(fx >= 0 && fy >= 0 && fx <= g.nx - 1 && fy <= g.ny - 1)) return null;
+    const i = Math.min(Math.floor(fx), g.nx - 2), j = Math.min(Math.floor(fy), g.ny - 2), u = fx - i, v = fy - j;
+    const bil = (a) => {
+      const c = [a[j * g.nx + i], a[j * g.nx + i + 1], a[(j + 1) * g.nx + i], a[(j + 1) * g.nx + i + 1]];
+      if (c.some((t) => t == null)) return null;
+      return (1 - u) * (1 - v) * c[0] + u * (1 - v) * c[1] + (1 - u) * v * c[2] + u * v * c[3];
+    };
+    const dx = bil(inv ? g.inv_dx : g.dx), dy = bil(inv ? g.inv_dy : g.dy);
+    return dx == null || dy == null ? null : [x + dx, y + dy];
+  }
+  // A pair is judged only where it is surrounded: at least 3 other pairs within 1.5 sigma, in at least 3 of the 4
+  // quadrants around it. At the edge of the clicked area a local fit extrapolates, so those pairs read "not judged".
+  function surrounded(ps, p) {
+    const r2 = (1.5 * sigmaOf()) ** 2, q = new Set(); let n = 0;
+    for (const o of ps) { if (o.id === p.id) continue; const dx = o.xl - p.xl, dy = o.yl - p.yl; if (dx * dx + dy * dy <= r2) { n++; q.add((dx >= 0 ? 1 : 0) + (dy >= 0 ? 2 : 0)); } }
+    return n >= 3 && q.size >= 3;
+  }
+  function looLocal(ps) {                       // id -> distance from the field, or from the leave-one-out local fit; null = not judged
+    const out = {}, g = fieldOf(S.req);
+    for (const p of ps) {
+      const q = g ? fieldAt(g, p.xl, p.yl) : null;
+      if (q) { out[p.id] = Math.hypot(q[0] - p.xr, q[1] - p.yr); continue; }
+      if (!surrounded(ps, p)) { out[p.id] = null; continue; }
+      const A = localModel(ps, p.xl, p.yl, p.id); out[p.id] = A ? Math.hypot(apply(A, p.xl, p.yl)[0] - p.xr, apply(A, p.xl, p.yl)[1] - p.yr) : null;
+    }
+    return out;
+  }
+  function median(a) { const v = a.filter((x) => x != null).sort((x, y) => x - y); return v.length ? v[Math.floor((v.length - 1) / 2)] : null; }
+  function isOutlier(err, all) {
+    if (err == null) return false;
+    if (fieldOf(S.req)) return err > (S.req.field.tol_px || 15);
+    const m = median(Object.values(all));
+    return err > FLAG_K * NOISE && (m == null || err > FLAG_K * Math.max(m, NOISE / 2));
+  }
+  function predictor() {                        // maps left <-> right for the linked view and the predicted spot
+    const ps = pairsOf(S.rid), g = fieldOf(S.req);
+    if (!g && (!ps.length || S.link === "off")) return { lr: (x, y) => [x, y], rl: (x, y) => [x, y] };
+    if (S.link === "off") return { lr: (x, y) => [x, y], rl: (x, y) => [x, y] };
+    const base = pairsPredictor(ps);
+    if (g) return { lr: (x, y) => fieldAt(g, x, y, false) || base.lr(x, y), rl: (x, y) => fieldAt(g, x, y, true) || base.rl(x, y) };
+    return base;
+  }
+  function pairsPredictor(ps) {
+    if (!ps.length) return { lr: (x, y) => [x, y], rl: (x, y) => [x, y] };
+    if (S.link === "shift") { const dx = sum(ps.map((p) => p.xr - p.xl)) / ps.length, dy = sum(ps.map((p) => p.yr - p.yl)) / ps.length; return { lr: (x, y) => [x + dx, y + dy], rl: (x, y) => [x - dx, y - dy] }; }
+    const flip = ps.map((p) => ({ id: p.id, xl: p.xr, yl: p.yr, xr: p.xl, yr: p.yl }));
+    return {
+      lr: (x, y) => { const A = localModel(ps, x, y); return A ? apply(A, x, y) : [x, y]; },
+      rl: (x, y) => { const A = localModel(flip, x, y); return A ? apply(A, x, y) : [x, y]; },
+    };
+  }
+
+  // ---------- viewers ----------
+  const V = {};
+  for (const side of ["L", "R"]) { V[side] = { stage: $("stage" + side), img: $("img" + side), ov: $("ov" + side) }; attach(side); }
+  const zOf = (side) => (S.req ? (side === "L" ? S.req.zl : S.req.zr) : null);
+  function sz(side) { const r = V[side].stage.getBoundingClientRect(); return { w: r.width, h: r.height }; }
+  function toScreen(side, x, y) { const v = S.view[side], d = sz(side); return [(x - v.cx) * v.s + d.w / 2, (y - v.cy) * v.s + d.h / 2]; }
+  function toStack(side, sx, sy) { const v = S.view[side], d = sz(side); return [(sx - d.w / 2) / v.s + v.cx, (sy - d.h / 2) / v.s + v.cy]; }
+  const other = (side) => (side === "L" ? "R" : "L");
+  function follow(side) {
+    if (S.link === "off") return;
+    const m = predictor(), v = S.view[side], o = S.view[other(side)];
+    const q = side === "L" ? m.lr(v.cx, v.cy) : m.rl(v.cx, v.cy);
+    o.cx = q[0]; o.cy = q[1]; o.s = v.s;
+  }
+  function fitCanvas(c, w, h) {
+    const dpr = window.devicePixelRatio || 1;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return ctx;
+  }
+  function drawSide(side) {
+    const d = sz(side), v = S.view[side];
+    const ictx = fitCanvas(V[side].img, d.w, d.h), octx = fitCanvas(V[side].ov, d.w, d.h);
+    ictx.clearRect(0, 0, d.w, d.h); octx.clearRect(0, 0, d.w, d.h);
+    const R = S.req; if (!R) return;
+    const showSide = S.flick ? other(side) : side;            // flicker: show the other section through this side's view
+    const z = zOf(showSide), spec = R.images[String(z)];
+    let off = [0, 0];
+    if (S.flick) {                                             // place the other section where the pairs say it lines up
+      const m = predictor(), c = side === "L" ? m.lr(v.cx, v.cy) : m.rl(v.cx, v.cy);
+      off = [v.cx - c[0], v.cy - c[1]];
+    }
+    ictx.imageSmoothingEnabled = v.s < 2;
+    if (!drawImageSpec(ictx, side, spec, R, off)) {
+      octx.fillStyle = "#cfd5da"; octx.font = "13px IBM Plex Sans, sans-serif"; octx.fillText("Loading section " + z + " …", 14, 24);
+    }
+    octx.lineWidth = 1; octx.setLineDash([6, 5]); octx.font = "11px IBM Plex Mono, monospace";
+    for (const c of R.cubes || []) {
+      const [a, b] = toScreen(side, c.x, c.y), s = (c.size || 1536) * v.s;
+      octx.strokeStyle = "rgba(120, 210, 235, 0.75)"; octx.strokeRect(a, b, s, s);
+      octx.fillStyle = "rgba(120, 210, 235, 0.95)"; octx.fillText(c.name, a + 6, b + 14);
+    }
+    octx.setLineDash([2, 4]);
+    for (const g of R.regions || []) {                         // areas with a minimum number of pairs (left section frame)
+      if (side !== "L") break;
+      const [a, b] = toScreen(side, g.x0, g.y0);
+      octx.strokeStyle = "rgba(255, 212, 0, 0.8)"; octx.strokeRect(a, b, (g.x1 - g.x0) * v.s, (g.y1 - g.y0) * v.s);
+      octx.fillStyle = "rgba(255, 212, 0, 0.95)"; octx.fillText(g.name, a + 6, b + 28);
+    }
+    octx.setLineDash([]);
+    if (side === "L" && !S.flick) for (const h of R.hotspots || []) {   // places the automatic matching was least sure of
+      const [a, b] = toScreen(side, h.x, h.y), done = hotDone(h);
+      octx.save(); octx.translate(a, b); octx.rotate(Math.PI / 4);
+      octx.lineWidth = 3; octx.strokeStyle = "rgba(0,0,0,0.85)"; octx.strokeRect(-7, -7, 14, 14);
+      octx.lineWidth = 1.8; octx.strokeStyle = done ? "#7dff5a" : "#ff8a1f"; octx.strokeRect(-7, -7, 14, 14);
+      octx.restore();
+    }
+    if (S.flick) return;
+    const ps = pairsOf(S.rid, S.showRej), errs = looLocal(pairsOf(S.rid));
+    ps.forEach((p, i) => {
+      const [a, b] = toScreen(side, side === "L" ? p.xl : p.xr, side === "L" ? p.yl : p.yr);
+      const col = p.status === "rejected" ? "#888" : isOutlier(errs[p.id], errs) || p.status === "flagged" ? "#ff3b3b" : PAL[i % PAL.length];
+      ring(octx, a, b, col, String(i + 1), S.selected === p.id);
+    });
+    const pd = S.pending;
+    if (pd && pd.side === side) ring(octx, ...toScreen(side, pd.x, pd.y), "#ff8a1f", "new", true, true);
+    if (pd && pd.side !== side && S.hint && pairsOf(S.rid).length) {
+      const m = predictor(), q = pd.side === "L" ? m.lr(pd.x, pd.y) : m.rl(pd.x, pd.y), [a, b] = toScreen(side, q[0], q[1]);
+      octx.strokeStyle = "rgba(255, 138, 31, 0.9)"; octx.lineWidth = 1.5; octx.beginPath();
+      octx.moveTo(a - 14, b); octx.lineTo(a - 4, b); octx.moveTo(a + 4, b); octx.lineTo(a + 14, b);
+      octx.moveTo(a, b - 14); octx.lineTo(a, b - 4); octx.moveTo(a, b + 4); octx.lineTo(a, b + 14); octx.stroke();
+    }
+  }
+  // An image is either one file covering request.crop, or a tiled set
+  // {x0, y0, w, h, tile, cols, rows, pattern ("...c{c}_r{r}.jpg"), overview, overview_scale}. Returns false while loading.
+  function drawImageSpec(ctx, side, spec, R, off) {
+    const v = S.view[side];
+    if (typeof spec === "string") {
+      const im = img(spec); if (!(im && im.complete && im.naturalWidth)) return false;
+      const [sx, sy] = toScreen(side, R.crop.x0 + off[0], R.crop.y0 + off[1]);
+      ctx.drawImage(im, sx, sy, R.crop.w * v.s, R.crop.h * v.s); return true;
+    }
+    if (!spec || !spec.tile) return false;
+    const ov = img(spec.overview), [ox, oy] = toScreen(side, spec.x0 + off[0], spec.y0 + off[1]);
+    let drew = false;
+    if (ov && ov.complete && ov.naturalWidth) { ctx.drawImage(ov, ox, oy, spec.w * v.s, spec.h * v.s); drew = true; }
+    if (v.s * (spec.overview_scale || 4) < 1.5) return drew;  // the overview is sharp enough at this zoom
+    const d = sz(side), a = toStack(side, 0, 0), b = toStack(side, d.w, d.h);
+    const c0 = Math.max(0, Math.floor((a[0] - off[0] - spec.x0) / spec.tile)), c1 = Math.min(spec.cols - 1, Math.floor((b[0] - off[0] - spec.x0) / spec.tile));
+    const r0 = Math.max(0, Math.floor((a[1] - off[1] - spec.y0) / spec.tile)), r1 = Math.min(spec.rows - 1, Math.floor((b[1] - off[1] - spec.y0) / spec.tile));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const t = img(spec.pattern.replace("{c}", c).replace("{r}", r));
+      if (!(t && t.complete && t.naturalWidth)) continue;
+      const [tx, ty] = toScreen(side, spec.x0 + off[0] + c * spec.tile, spec.y0 + off[1] + r * spec.tile);
+      ctx.drawImage(t, tx, ty, t.naturalWidth * v.s, t.naturalHeight * v.s); drew = true;
+    }
+    return drew;
+  }
+  function hotDone(h) { return pairsOf(S.rid).some((p) => Math.hypot(p.xl - h.x, p.yl - h.y) <= (h.r || 150)); }
+  function ring(ctx, x, y, col, label, bold, dashed) {
+    ctx.save();
+    ctx.lineWidth = 4; ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = bold ? 2.6 : 1.8; ctx.strokeStyle = col; if (dashed) ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.font = "600 12px IBM Plex Sans, sans-serif"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.9)";
+    ctx.strokeText(label, x + 12, y - 10); ctx.fillText(label, x + 12, y - 10);
+    ctx.restore();
+  }
+  let raf = 0;
+  function drawAll() { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; drawSide("L"); drawSide("R"); }); }
+  window.addEventListener("resize", drawAll);
+
+  function attach(side) {
+    const ov = V[side].ov, ptrs = new Map();
+    let drag = null;
+    ov.addEventListener("pointerdown", (e) => {
+      if (!S.req) return;
+      ov.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.offsetX, e.offsetY]); S.dragging = true;
+      if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; drag = { mode: "pinch", d0: Math.hypot(a[0] - b[0], a[1] - b[1]), s0: S.view[side].s }; return; }
+      const hit = hitMarker(side, e.offsetX, e.offsetY);
+      drag = hit ? { mode: "marker", hit, x0: e.offsetX, y0: e.offsetY, moved: false }
+                 : { mode: "pan", x0: e.offsetX, y0: e.offsetY, cx: S.view[side].cx, cy: S.view[side].cy, moved: false };
+    });
+    ov.addEventListener("pointermove", (e) => {
+      const st = toStack(side, e.offsetX, e.offsetY);
+      $("xy" + side).textContent = "x " + Math.round(st[0]) + "   y " + Math.round(st[1]);
+      if (!drag) return;
+      if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, [e.offsetX, e.offsetY]);
+      if (drag.mode === "pinch" && ptrs.size === 2) {
+        const [a, b] = [...ptrs.values()], dd = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        zoomAt(side, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, clampS(drag.s0 * dd / drag.d0) / S.view[side].s); return;
+      }
+      const dx = e.offsetX - drag.x0, dy = e.offsetY - drag.y0;
+      if (Math.hypot(dx, dy) > 4) drag.moved = true;
+      if (drag.mode === "pan" && drag.moved) { const v = S.view[side]; v.cx = drag.cx - dx / v.s; v.cy = drag.cy - dy / v.s; follow(side); drawAll(); }
+      else if (drag.mode === "marker" && drag.moved && !drag.hit.readonly) {
+        const h = drag.hit, q = toStack(side, e.offsetX, e.offsetY);
+        if (h.pending) { S.pending.x = Math.round(q[0]); S.pending.y = Math.round(q[1]); }
+        else { const p = S.pairs.find((r) => r.id === h.id); if (p) { if (side === "L") { p.xl = Math.round(q[0]); p.yl = Math.round(q[1]); } else { p.xr = Math.round(q[0]); p.yr = Math.round(q[1]); } h.live = true; } }
+        drawAll();
+      }
+    });
+    const end = (e) => {
+      ptrs.delete(e.pointerId); if (!ptrs.size) S.dragging = false;
+      if (!drag) return;
+      const dr = drag; drag = null;
+      if (dr.mode === "pinch") return;
+      if (dr.mode === "pan" && !dr.moved) place(side, e.offsetX, e.offsetY);
+      if (dr.mode === "marker" && dr.moved && !dr.hit.pending && dr.hit.live) saveMove(dr.hit.id);
+      if (dr.mode === "marker" && !dr.moved && !dr.hit.pending) { S.selected = dr.hit.id; refresh(); }
+    };
+    ov.addEventListener("pointerup", end); ov.addEventListener("pointercancel", end);
+    ov.addEventListener("pointerleave", () => { $("xy" + side).textContent = "—"; });
+    ov.addEventListener("wheel", (e) => { e.preventDefault(); zoomAt(side, e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+  }
+  const clampS = (s) => Math.min(8, Math.max(0.06, s));
+  function zoomAt(side, sx, sy, k) {
+    const v = S.view[side], before = toStack(side, sx, sy);
+    v.s = clampS(v.s * k);
+    const after = toStack(side, sx, sy); v.cx += before[0] - after[0]; v.cy += before[1] - after[1];
+    follow(side); drawAll();
+  }
+  function mine(p) { return S.me && p.by === S.me; }
+  function hitMarker(side, sx, sy) {
+    const pd = S.pending;
+    if (pd && pd.side === side) { const [a, b] = toScreen(side, pd.x, pd.y); if (Math.hypot(a - sx, b - sy) < 12) return { pending: true }; }
+    let best = null, bd = 12;
+    for (const p of pairsOf(S.rid)) {
+      const [a, b] = toScreen(side, side === "L" ? p.xl : p.xr, side === "L" ? p.yl : p.yr), dd = Math.hypot(a - sx, b - sy);
+      if (dd < bd) { bd = dd; best = p; }
+    }
+    if (!best) return null;
+    if (!mine(best)) { S.selected = best.id; refresh(); setStatus("That pair is someone else's: you can confirm or dispute it in the table."); return { id: best.id, readonly: true, pending: false }; }
+    return { id: best.id, side };
+  }
+  function inCrop(side, x, y) {
+    const sp = S.req.images[String(zOf(side))], c = sp && typeof sp === "object" ? sp : S.req.crop;
+    return x >= c.x0 && y >= c.y0 && x < c.x0 + c.w && y < c.y0 + c.h;
+  }
+  function place(side, sx, sy) {
+    if (!S.req || S.req.status === "paused") { if (S.req) setStatus("This request is paused: no new pairs for now."); return; }
+    const q = toStack(side, sx, sy), x = Math.round(q[0]), y = Math.round(q[1]);
+    if (!inCrop(side, x, y)) return;
+    const pd = S.pending;
+    if (!pd || pd.side === side) { S.pending = { side, x, y }; refresh(); return; }
+    const L = pd.side === "L" ? [pd.x, pd.y] : [x, y], Rr = pd.side === "L" ? [x, y] : [pd.x, pd.y];
+    S.pending = null;
+    addPair(L, Rr);
+  }
+  function keyF(e, down) {
+    if (e.key === "f" || e.key === "F") { if (e.target.closest && e.target.closest("input,select,textarea")) return; S.flick = down || $("swap").checked; drawAll(); }
+    if (down && e.key === "Escape" && S.pending) { S.pending = null; refresh(); }
+  }
+  window.addEventListener("keydown", (e) => keyF(e, true));
+  window.addEventListener("keyup", (e) => keyF(e, false));
+
+  // ---------- database and accounts (Supabase REST; no library) ----------
+  const CFG = { url: "https://djsmidaetnskezfyctjv.supabase.co", key: "sb_publishable_wJjRcFvVhB7Pi1DATxXTiQ_2GsCAqFj" };
+  const COLS = "id,rid,req_version,crop_sha,zl,zr,xl,yl,xr,yr,by,at,status,flag_reason,note,origin,moved_at,rejected_by";
+  const SKEY = "matchdesk_session";
+  let session = null;
+  function saveSession(s) { session = s; try { if (s) localStorage.setItem(SKEY, JSON.stringify(s)); else localStorage.removeItem(SKEY); } catch (_) {} }
+  function loadSession() { try { return JSON.parse(localStorage.getItem(SKEY) || "null"); } catch (_) { return null; } }
+  function sessionFrom(t) {
+    return { access_token: t.access_token, refresh_token: t.refresh_token,
+      expires_at: +t.expires_at || Math.floor(Date.now() / 1000) + (+t.expires_in || 3600) };
+  }
+  function ApiError(status, body) {
+    const msg = (body && (body.msg || body.message || body.error_description || body.error)) || ("HTTP " + status);
+    const e = new Error(typeof msg === "string" ? msg : "HTTP " + status); e.status = status; e.body = body; return e;
+  }
+  async function raw(method, path, body, tok, extra) {
+    const h = Object.assign({ apikey: CFG.key, Authorization: "Bearer " + (tok || CFG.key), "Content-Type": "application/json" }, extra || {});
+    const r = await fetch(CFG.url + path, { method: method, headers: h, body: body == null ? undefined : JSON.stringify(body) });
+    const t = await r.text(); let j = null;
+    try { j = t ? JSON.parse(t) : null; } catch (_) { j = t; }
+    if (!r.ok) throw ApiError(r.status, j);
+    return j;
+  }
+  let refreshing = null;
+  async function token() {
+    if (!session) return null;
+    if (session.expires_at - Date.now() / 1000 > 60) return session.access_token;
+    if (!refreshing) refreshing = raw("POST", "/auth/v1/token?grant_type=refresh_token", { refresh_token: session.refresh_token })
+      .then((t) => saveSession(sessionFrom(t)), () => saveSession(null)).then(() => { refreshing = null; });
+    await refreshing;
+    return session ? session.access_token : null;
+  }
+  async function api(method, path, body, prefer) {
+    const t = await token();
+    return raw(method, "/rest/v1/" + path, body, t, { Prefer: prefer || "return=representation" });
+  }
+  const enc = encodeURIComponent;
+  const pageUrl = () => location.origin + location.pathname;
+
+  // the email links (confirm sign-up, reset password) come back with the session in the URL fragment
+  function takeHash() {
+    if (!location.hash || location.hash.length < 2) return null;
+    const q = new URLSearchParams(location.hash.slice(1));
+    if (!q.get("access_token") && !q.get("error_description")) return null;
+    history.replaceState(null, "", location.pathname + location.search);
+    if (q.get("error_description")) return { error: q.get("error_description") };
+    saveSession(sessionFrom({ access_token: q.get("access_token"), refresh_token: q.get("refresh_token"),
+      expires_in: q.get("expires_in"), expires_at: q.get("expires_at") }));
+    return { type: q.get("type") };
+  }
+
+  async function afterLogin() {
+    const u = await raw("GET", "/auth/v1/user", null, await token());
+    S.me = u.id; S.email = u.email;
+    const pr = await api("GET", "profiles?select=id,display_name,role,approved&id=eq." + enc(u.id));
+    S.profile = pr[0] || null;
+    S.role = S.profile && S.profile.approved ? S.profile.role : "none";
+    S.admin = S.role === "referee" || S.role === "admin";      // staff: reject, restore, delete any pair
+    S.canWrite = S.role !== "none";
+    S.db = true;
+    renderAccount();
+    await loadAll();
+  }
+  async function signOut() {
+    try { await raw("POST", "/auth/v1/logout", null, await token()); } catch (_) {}
+    saveSession(null);
+    Object.assign(S, { me: null, email: null, profile: null, role: "none", admin: false, canWrite: false, db: null,
+      requests: [], pairs: [], names: {}, rid: null, req: null, people: [] });
+    renderAccount(); refresh();
+  }
+
+  let loading = false;
+  async function loadAll() {
+    if (!session || loading) return;
+    loading = true;
+    try {
+      const got = await Promise.all([
+        api("GET", "requests?select=id,data,priority,status"),
+        api("GET", "pairs?select=" + COLS + "&order=at.asc&limit=10000"),
+        api("GET", "checks?select=pair_id,by,verdict&limit=50000"),
+        S.role !== "none" ? api("GET", "profiles?select=id,display_name,role") : Promise.resolve([]),
+      ]);
+      S.requests = got[0].map((r) => Object.assign({}, r.data, { id: r.id, priority: r.priority, status: r.status }));
+      const byPair = {};
+      for (const c of got[2]) (byPair[c.pair_id] = byPair[c.pair_id] || []).push(c);
+      if (S.dragging) return;                                 // never snap a marker back while it is being dragged
+      S.pairs = got[1].map((p) => Object.assign(p, {
+        confirmed_by: (byPair[p.id] || []).filter((c) => c.verdict === "ok").map((c) => c.by),
+        disputed_by: (byPair[p.id] || []).filter((c) => c.verdict === "bad").map((c) => c.by) }));
+      S.names = {}; for (const p of got[3]) S.names[p.id] = p;
+      $("saveNote").textContent = S.canWrite ? "Pairs save as you click. The page refreshes every 20 seconds." :
+        "You can look around. Saving pairs starts once a referee approves your account.";
+      let want = S.rid; if (!want) { try { want = localStorage.getItem("matchdesk_rid"); } catch (_) {} }
+      const pick = S.requests.find((r) => r.id === want) || S.requests.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0))[0];
+      if (pick) selectRequest(pick.id, false); else refresh();
+      if (S.admin && !$("staff").hidden && $("staff").open) loadPeople();
+    } catch (err) {
+      if (err.status === 401) { saveSession(null); renderAccount(); setStatus("Your session ended. Sign in again.", true); }
+      else $("saveNote").textContent = "Couldn't load from the database (" + err.message + "). It retries every 20 seconds.";
+    } finally { loading = false; }
+  }
+  setInterval(() => { if (!document.hidden && !S.pending && !S.dragging) loadAll(); }, 20000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadAll(); });
+
+  // ---------- pairs ----------
+  function flagState(p, all) {
+    const errs = looLocal(all);
+    return isOutlier(errs[p.id], errs) ? { status: "flagged", flag_reason: "outlier: " + errs[p.id].toFixed(0) + " px from " + (fieldOf(S.req) ? "the correction" : "its neighbours") } : null;
+  }
+  async function addPair(L, Rr) {
+    if (!S.canWrite) { setStatus(session ? "Saving starts once a referee approves your account." : "Sign in to save pairs.", true); refresh(); return; }
+    const R = S.req;
+    const body = { rid: R.id, req_version: R.version || 1, crop_sha: R.crop_sha || {}, zl: R.zl, zr: R.zr,
+      xl: L[0], yl: L[1], xr: Rr[0], yr: Rr[1], note: "", origin: "match desk (public page)" };
+    const local = Object.assign({ id: "tmp" + Date.now(), by: S.me, at: new Date().toISOString(), status: "new",
+      confirmed_by: [], disputed_by: [] }, body);
+    S.pairs.push(local);
+    const f = flagState(local, pairsOf(R.id));
+    if (f) { Object.assign(body, f); Object.assign(local, f); }
+    S.selected = local.id; refresh();
+    const near = pairsOf(R.id).filter((p) => p !== local).map((p) => Math.hypot(p.xl - L[0], p.yl - L[1])), sp = R.min_spacing_px || 0;
+    const close = sp && near.length && Math.min.apply(null, near) < sp;
+    try {
+      const rows = await api("POST", "pairs?select=" + COLS, body);
+      Object.assign(local, rows[0]); S.selected = local.id; refresh();
+      setStatus(f ? "Saved, but it is " + f.flag_reason.slice(9) + ". Look again: move it or delete it." :
+        "Saved pair " + (pairsOf(R.id).indexOf(local) + 1) + "." + (close ? " It is within " + sp + " px of another pair; spread the next ones out." : ""), !!f);
+    } catch (err) { S.pairs = S.pairs.filter((p) => p !== local); refresh(); failed(err); }
+  }
+  async function saveMove(id) {
+    const p = S.pairs.find((q) => q.id === id); if (!p) return;
+    // a moved pair loses its checks (the database drops them); it stays flagged only if it is still an outlier
+    const upd = { xl: p.xl, yl: p.yl, xr: p.xr, yr: p.yr };
+    if (p.status !== "rejected") { upd.status = "new"; upd.flag_reason = ""; }
+    const f = flagState(p, pairsOf(S.rid));
+    if (f && p.status !== "rejected") Object.assign(upd, f);
+    Object.assign(p, upd, { confirmed_by: [], disputed_by: [] }); refresh();
+    try {
+      await api("PATCH", "pairs?id=eq." + enc(id) + "&select=id", upd);
+      setStatus(f ? "Moved, still " + f.flag_reason.slice(9) + "." : "Moved point saved.", !!f);
+    } catch (err) { failed(err); loadAll(); }
+  }
+  async function delPair(id) {
+    S.pairs = S.pairs.filter((p) => p.id !== id); if (S.selected === id) S.selected = null; refresh();
+    try { await api("DELETE", "pairs?id=eq." + enc(id), null, "return=minimal"); setStatus("Pair deleted."); }
+    catch (err) { failed(err); loadAll(); }
+  }
+  async function check(id, verdict) {
+    const p = S.pairs.find((q) => q.id === id); if (!p || !S.me) return;
+    const had = (p.confirmed_by || []).indexOf(S.me) >= 0 ? "ok" : (p.disputed_by || []).indexOf(S.me) >= 0 ? "bad" : null;
+    try {
+      if (had === verdict) {                                   // the same button again withdraws the check
+        await api("DELETE", "checks?pair_id=eq." + enc(id) + "&by=eq." + enc(S.me), null, "return=minimal");
+        setStatus("Check withdrawn.");
+      } else {
+        await api("POST", "checks?on_conflict=pair_id,by", { pair_id: id, verdict: verdict }, "resolution=merge-duplicates,return=minimal");
+        setStatus(verdict === "ok" ? "Confirmed." : "Disputed: the pair is flagged for its author and the referees.");
+      }
+    } catch (err) { failed(err); }
+    loadAll();
+  }
+  async function reject(id, on) {
+    try {
+      await api("PATCH", "pairs?id=eq." + enc(id) + "&select=id", { status: on ? "rejected" : "new" });
+      setStatus(on ? "Rejected: the correction will not use it." : "Restored.");
+    } catch (err) { failed(err); }
+    loadAll();
+  }
+  const noteTimers = {};
+  function setNote(id, text) {
+    const p = S.pairs.find((q) => q.id === id); if (!p) return; p.note = text;
+    clearTimeout(noteTimers[id]);
+    noteTimers[id] = setTimeout(async () => {
+      try { await api("PATCH", "pairs?id=eq." + enc(id) + "&select=id", { note: text.slice(0, 500) }); } catch (err) { failed(err); }
+    }, 700);
+  }
+  function failed(err) {
+    const s = err && err.status;
+    setStatus(s === 401 ? "Your session ended. Sign in again." :
+      s === 403 || s === 400 ? "Not saved: " + err.message + "." :
+      "Saving failed (" + ((err && err.message) || "network error") + "). Try again in a moment.", true);
+  }
+
+  // ---------- the account bar and the referees' people list ----------
+  let authMode = "signin";
+  function el(tag, attrs, kids) {
+    const e = document.createElement(tag);
+    for (const k in attrs || {}) { if (k === "text") e.textContent = attrs[k]; else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), attrs[k]); else e.setAttribute(k, attrs[k]); }
+    for (const c of kids || []) e.append(c);
+    return e;
+  }
+  function field(id, label, type, auto) {
+    return el("label", { for: id, class: "fld" }, [el("span", { class: "lab", text: label }),
+      el("input", { id: id, type: type, autocomplete: auto, required: "" })]);
+  }
+  function renderAccount() {
+    const box = $("account"); box.textContent = "";
+    if (S.recovery) {
+      const f = el("form", { class: "authform", onsubmit: async (e) => {
+        e.preventDefault(); const pw = $("newPw").value;
+        try { await setPassword(pw); S.recovery = false; setStatus("Password changed."); await afterLogin(); }
+        catch (err) { $("authMsg").textContent = err.message; }
+      } }, [el("strong", { text: "Choose a new password" }), field("newPw", "New password (10+ characters, upper and lower case, a digit)", "password", "new-password"),
+        el("button", { type: "submit", class: "primary", text: "Save password" }), el("span", { id: "authMsg", class: "msg" })]);
+      box.append(f); return;
+    }
+    if (session && S.me) {
+      const role = S.role === "none" ? "waiting for approval" : S.role;
+      const name = (S.profile && S.profile.display_name) || S.email;
+      box.append(el("div", { class: "who-bar" }, [
+        el("span", { text: "Signed in as " }), el("strong", { text: name }), el("span", { class: "mutedtxt", text: " (" + S.email + ")" }),
+        el("span", { class: "pill " + (S.role === "none" ? "p-paused" : "p-confirmed"), text: role }),
+        el("button", { type: "button", text: "Sign out", onclick: signOut })]));
+      if (S.role === "none") box.append(el("p", { class: "note", text: "A referee checks new accounts before they can save pairs. You can already look at every request; this page notices the approval by itself." }));
+      $("staff").hidden = !S.admin;
+      return;
+    }
+    $("staff").hidden = true;
+    const tabs = el("div", { class: "row", role: "tablist" }, [["signin", "Sign in"], ["register", "Register"], ["forgot", "Forgot password"]].map((m) =>
+      el("button", { type: "button", role: "tab", "aria-selected": String(authMode === m[0]), class: authMode === m[0] ? "primary" : "", text: m[1],
+        onclick: () => { authMode = m[0]; renderAccount(); } })));
+    const kids = [tabs];
+    if (authMode === "register") kids.push(field("auName", "Your name, as others will see it", "text", "name"));
+    kids.push(field("auEmail", "Email", "email", "email"));
+    if (authMode !== "forgot") kids.push(field("auPw", authMode === "register" ? "Password (10+ characters, upper and lower case, a digit)" : "Password", "password",
+      authMode === "register" ? "new-password" : "current-password"));
+    kids.push(el("button", { type: "submit", class: "primary", text: authMode === "signin" ? "Sign in" : authMode === "register" ? "Register" : "Email me a reset link" }));
+    kids.push(el("span", { id: "authMsg", class: "msg" }));
+    const f = el("form", { class: "authform", onsubmit: async (e) => {
+      e.preventDefault(); const msg = $("authMsg"); msg.textContent = "…";
+      const email = $("auEmail").value.trim();
+      try {
+        if (authMode === "signin") { await signIn(email, $("auPw").value); return; }
+        if (authMode === "register") { await raw("POST", "/auth/v1/signup?redirect_to=" + enc(pageUrl()), { email: email, password: $("auPw").value, data: { display_name: $("auName").value.trim().slice(0, 80) } });
+          msg.textContent = "Check your email and click the link to confirm. Then a referee approves your account."; return; }
+        await raw("POST", "/auth/v1/recover?redirect_to=" + enc(pageUrl()), { email: email });
+        msg.textContent = "If that address has an account, a reset link is on its way.";
+      } catch (err) {
+        msg.textContent = err.status === 400 && authMode === "signin" ? "Wrong email or password, or the email isn't confirmed yet." :
+          err.status === 429 ? "Too many emails sent in the last hour. Try again later." : err.message;
+      }
+    } }, kids);
+    box.append(f);
+  }
+  async function signIn(email, password) {
+    const t = await raw("POST", "/auth/v1/token?grant_type=password", { email: email, password: password });
+    saveSession(sessionFrom(t)); await afterLogin();
+  }
+  async function setPassword(pw) { await raw("PUT", "/auth/v1/user", { password: pw }, await token()); }
+  async function loadPeople() {
+    const box = $("people");
+    try { S.people = await api("POST", "rpc/people_for_staff", {}); }
+    catch (err) { box.textContent = "Couldn't load the list (" + err.message + ")."; return; }
+    box.textContent = "";
+    const tb = el("tbody");
+    for (const p of S.people) {
+      const acts = el("span", { class: "acts" });
+      const canApprove = S.role === "admin" || (S.role === "referee" && p.role === "helper");
+      if (canApprove && p.id !== S.me) acts.append(el("button", { type: "button", text: p.approved ? "Remove approval" : "Approve",
+        onclick: () => setPerson(p.id, { approved: !p.approved }) }));
+      if (S.role === "admin" && p.id !== S.me) {
+        const sel = el("select", { id: "role_" + p.id, "aria-label": "Role of " + (p.display_name || p.email),
+          onchange: (e) => setPerson(p.id, { role: e.target.value }) }, ["helper", "referee", "admin"].map((r) => el("option", { value: r, text: r })));
+        sel.value = p.role; acts.append(sel);
+      }
+      tb.append(el("tr", {}, [el("td", { text: p.display_name || "—" }), el("td", { class: "mono", text: p.email }),
+        el("td", { text: p.email_confirmed ? "yes" : "not yet" }), el("td", { class: "mono", text: (p.created_at || "").slice(0, 10) }),
+        el("td", {}, [el("span", { class: "pill " + (p.approved ? "p-confirmed" : "p-paused"), text: p.approved ? p.role : "waiting" })]), el("td", {}, [acts])]));
+    }
+    box.append(el("div", { class: "tablewrap" }, [el("table", {}, [el("thead", {}, [el("tr", {}, ["Name", "Email", "Email confirmed", "Signed up", "Status", ""].map((h) => el("th", { text: h })))]), tb])]));
+    if (!S.people.length) box.append(el("p", { class: "empty", text: "Nobody has signed up yet." }));
+  }
+  async function setPerson(id, upd) {
+    try { await api("PATCH", "profiles?id=eq." + enc(id) + "&select=id", upd); setStatus("Saved."); }
+    catch (err) { setStatus("Not saved: " + err.message + ".", true); }
+    loadPeople(); loadAll();
+  }
+
+  // ---------- rendering ----------
+  let flashUntil = 0;
+  function setStatus(text, bad) { const el = $("status"); el.textContent = ""; const s = document.createElement("span"); if (bad) s.className = "flag"; s.textContent = text; el.appendChild(s); flashUntil = Date.now() + 4000; }
+  function reqState(R) {
+    if (R.status && R.status !== "open") return R.status;
+    const ps = pairsOf(R.id); return ps.length >= (R.target || 20) && coverOk(R, ps) ? "enough" : "open";
+  }
+  function coverCounts(R, ps) { return (R.cubes || []).map((c) => ps.filter((p) => p.xl >= c.x && p.xl < c.x + (c.size || 1536) && p.yl >= c.y && p.yl < c.y + (c.size || 1536)).length); }
+  function regionCounts(R, ps) { return (R.regions || []).map((g) => ps.filter((p) => p.xl >= g.x0 && p.xl < g.x1 && p.yl >= g.y0 && p.yl < g.y1).length); }
+  function coverOk(R, ps) {
+    const n = coverCounts(R, ps), g = regionCounts(R, ps);
+    return (!n.length || Math.min(...n) >= (R.min_per_cube != null ? R.min_per_cube : 4)) && (R.regions || []).every((r, i) => g[i] >= r.min)
+      && (R.hotspots || []).every((h) => ps.some((p) => Math.hypot(p.xl - h.x, p.yl - h.y) <= (h.r || 150)));
+  }
+  const STATE_TEXT = { open: "needs pairs", enough: "enough pairs", fitted: "correction fitted", accepted: "accepted", paused: "paused" };
+  function renderQueue() {
+    const list = $("reqList"); list.textContent = "";
+    const rs = S.requests.slice().sort((a, b) => ((b.priority || 0) - (a.priority || 0)) || (a.id < b.id ? -1 : 1));
+    $("qCount").textContent = rs.length ? rs.filter((r) => reqState(r) === "open").length + " open of " + rs.length : "";
+    if (!rs.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = session ? "No requests yet. They appear here when the tracker or an admin posts one." : "Sign in or register (above) to see the requests."; list.appendChild(p); return; }
+    for (const R of rs) {
+      const ps = pairsOf(R.id), st = reqState(R), b = document.createElement("button");
+      b.type = "button"; b.className = "req"; b.id = "req_" + R.id; b.setAttribute("aria-current", String(R.id === S.rid));
+      const t = document.createElement("span"); t.className = "t"; t.textContent = R.title; b.appendChild(t);
+      const why = document.createElement("span"); why.className = "why"; why.textContent = R.reason || ""; b.appendChild(why);
+      const bar = document.createElement("span"); bar.className = "bar"; const fill = document.createElement("span"); fill.style.width = Math.min(100, 100 * ps.length / (R.target || 20)) + "%"; bar.appendChild(fill); b.appendChild(bar);
+      const meta = document.createElement("span"); meta.className = "meta";
+      const pill = document.createElement("span"); pill.className = "pill p-" + st; pill.textContent = STATE_TEXT[st] || st; meta.appendChild(pill);
+      const n = document.createElement("span"); n.textContent = ps.length + " / " + (R.target || 20) + " pairs · z " + R.zl + " → " + R.zr; meta.appendChild(n);
+      const fl = ps.filter((p) => p.status === "flagged").length;
+      if (fl) { const f = document.createElement("span"); f.className = "pill p-flagged"; f.textContent = fl + " flagged"; meta.appendChild(f); }
+      b.appendChild(meta);
+      b.addEventListener("click", () => selectRequest(R.id, true));
+      list.appendChild(b);
+    }
+  }
+  async function renderPeople() { return S.names; }
+  function who(id) {
+    const s = document.createElement("span"); s.className = "who";
+    const p = S.names && S.names[id];
+    s.textContent = !id ? "earlier page" : id === S.me ? "you" : (p && p.display_name) || "someone";
+    return s;
+  }
+  function refresh() {
+    renderQueue();
+    const R = S.req, tb = $("rows"); tb.textContent = "";
+    if (!R) { $("emptyRows").hidden = false; $("emptyRows").textContent = "Pick a request on the left."; renderFit(); drawAll(); return; }
+    const all = pairsOf(R.id), ps = pairsOf(R.id, S.showRej), errs = looLocal(all);
+    const ids = [...new Set(ps.flatMap((p) => [p.by, ...(p.confirmed_by || []), ...(p.disputed_by || [])]).filter(Boolean))];
+    renderPeople(ids).then(() => { for (const el of document.querySelectorAll("[data-who]")) { el.replaceWith(who(el.dataset.who)); } });
+    $("emptyRows").hidden = ps.length > 0; $("emptyRows").textContent = "No pairs yet. Click a spot on the left section to start.";
+    ps.forEach((p, i) => {
+      const tr = document.createElement("tr"); if (S.selected === p.id) tr.className = "sel";
+      const out = isOutlier(errs[p.id], errs);
+      const add = (html, cls, text) => { const td = document.createElement("td"); if (cls) td.className = cls; if (text != null) td.textContent = text; else if (html) td.appendChild(html); tr.appendChild(td); return td; };
+      const num = document.createElement("span"); const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = PAL[i % PAL.length]; num.append(dot, String(i + 1)); add(num);
+      add(null, "mono", "(" + p.xl + ", " + p.yl + ", " + p.zl + ")");
+      add(null, "mono", "(" + p.xr + ", " + p.yr + ", " + p.zr + ")");
+      add(null, "mono", "(" + (p.xr - p.xl) + ", " + (p.yr - p.yl) + ")");
+      const e = add(null, "mono" + (out ? " err" : ""), errs[p.id] == null ? "not judged" : errs[p.id].toFixed(1) + " px");
+      if (errs[p.id] == null) e.title = "At the edge of the clicked area: too few pairs around it to judge yet";
+      if (out) e.title = "More than " + FLAG_K * NOISE + " px from what nearby pairs predict: look again";
+      const st = document.createElement("span"); st.className = "pill p-" + (p.status || "new"); st.textContent = p.status || "new";
+      if (p.flag_reason && p.status === "flagged") st.title = p.flag_reason; add(st);
+      const w = document.createElement("span"); w.dataset.who = p.by || ""; add(w);
+      const ck = document.createElement("span"); ck.textContent = (p.confirmed_by || []).length + " ✓  " + (p.disputed_by || []).length + " ✗"; add(ck, "mono");
+      const tdn = document.createElement("td"), inp = document.createElement("input");
+      inp.id = "note_" + p.id; inp.value = p.note || ""; inp.placeholder = mine(p) ? "optional" : ""; inp.disabled = !mine(p) && !S.admin;
+      inp.setAttribute("aria-label", "Note for pair " + (i + 1)); inp.addEventListener("input", (ev) => setNote(p.id, ev.target.value)); tdn.appendChild(inp); tr.appendChild(tdn);
+      const tda = document.createElement("td"), acts = document.createElement("span"); acts.className = "acts";
+      const btn = (label, fn, aria) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.setAttribute("aria-label", aria + " pair " + (i + 1)); b.disabled = !S.canWrite || !S.db; b.addEventListener("click", fn); acts.appendChild(b); };
+      if (!mine(p) && S.me) { btn("Confirm", () => check(p.id, "ok"), "Confirm"); btn("Dispute", () => check(p.id, "bad"), "Dispute"); }
+      if (mine(p) || S.admin) btn("Delete", () => delPair(p.id), "Delete");
+      if (S.admin) btn(p.status === "rejected" ? "Restore" : "Reject", () => reject(p.id, p.status !== "rejected"), p.status === "rejected" ? "Restore" : "Reject");
+      tda.appendChild(acts); tr.appendChild(tda);
+      tr.addEventListener("click", (ev) => { if (ev.target.closest("button,input")) return; S.selected = p.id; S.view.L.cx = p.xl; S.view.L.cy = p.yl; S.view.R.cx = p.xr; S.view.R.cy = p.yr; refresh(); });
+      tb.appendChild(tr);
+    });
+    renderFit(all, errs);
+    const pd = S.pending; $("cancel").hidden = !pd;
+    if (pd) { const el = $("status"); el.textContent = ""; const s = document.createElement("span"); s.className = "pending"; s.textContent = "Point placed on z " + zOf(pd.side) + " at (" + pd.x + ", " + pd.y + "). "; el.append(s, "Now click the same tissue on z " + zOf(other(pd.side)) + ". Esc cancels."); }
+    else if (Date.now() > flashUntil) $("status").textContent = R.status === "paused" ? "This request is paused." : all.length ? all.length + " pairs for z " + R.zl + " → z " + R.zr + "." : "Click a spot on the left section to start a pair.";
+    drawAll();
+  }
+  function renderFit(all, errs) {
+    const kv = $("fit"), cv = $("cover"); kv.textContent = ""; cv.textContent = "";
+    const R = S.req; if (!R) return;
+    const add = (el, k, v) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; el.append(dt, dd); };
+    add(kv, "Sections", "z " + R.zl + " → z " + R.zr);
+    add(kv, "Pairs", all.length + " of " + (R.target || 20) + " wanted");
+    add(kv, "Confirmed", String(all.filter((p) => p.status === "confirmed").length));
+    add(kv, "Flagged", String(all.filter((p) => p.status === "flagged").length));
+    if (all.length) { add(kv, "Mean shift", "(" + (sum(all.map((p) => p.xr - p.xl)) / all.length).toFixed(0) + ", " + (sum(all.map((p) => p.yr - p.yl)) / all.length).toFixed(0) + ") px"); }
+    const m = median(Object.values(errs || {})); if (m != null) add(kv, fieldOf(R) ? "Typical off from the correction" : "Typical off from neighbours", m.toFixed(1) + " px (median)");
+    if (R.fit) add(kv, "Correction", R.fit);
+    if (R.source) add(kv, "Posted by", R.source);
+    const n = coverCounts(R, all);
+    (R.cubes || []).forEach((c, i) => add(cv, c.name, n[i] + (n[i] < (R.min_per_cube != null ? R.min_per_cube : 4) ? "  (needs " + ((R.min_per_cube != null ? R.min_per_cube : 4) - n[i]) + " more)" : "")));
+    const g = regionCounts(R, all);
+    (R.regions || []).forEach((r, i) => add(cv, r.name, g[i] + (g[i] < r.min ? "  (needs " + (r.min - g[i]) + " more)" : "")));
+    if ((R.hotspots || []).length) add(cv, "Hot spots with a pair", R.hotspots.filter(hotDone).length + " of " + R.hotspots.length + " (orange diamonds)");
+  }
+  function selectRequest(rid, recenter) {
+    const R = S.requests.find((r) => r.id === rid); if (!R) return;
+    const changed = S.rid !== rid;
+    S.rid = rid; S.req = R; if (changed) { S.pending = null; S.selected = null; }
+    $("zL").textContent = "z " + R.zl; $("zR").textContent = "z " + R.zr;
+    for (const z of [R.zl, R.zr]) { const sp = R.images[String(z)]; img(typeof sp === "string" ? sp : sp && sp.overview); }
+    if (recenter || changed) {
+      const st = R.start || [R.crop.x0 + R.crop.w / 2, R.crop.y0 + R.crop.h / 2];
+      S.view.L.cx = st[0]; S.view.L.cy = st[1]; S.view.R.cx = st[0]; S.view.R.cy = st[1];
+      const d = sz("L"); S.view.L.s = S.view.R.s = clampS(Math.min(d.w, d.h) / 900);
+      follow("L");
+    }
+    try { localStorage.setItem("matchdesk_rid", rid); } catch (_) {}
+    refresh();
+  }
+
+  // ---------- controls ----------
+  $("linkMode").addEventListener("change", (e) => { S.link = e.target.value; follow("L"); drawAll(); });
+  $("hint").addEventListener("change", (e) => { S.hint = e.target.checked; drawAll(); });
+  $("swap").addEventListener("change", (e) => { S.flick = e.target.checked; drawAll(); });
+  $("showRej").addEventListener("change", (e) => { S.showRej = e.target.checked; refresh(); });
+  for (const id of ["bright", "contrast"]) $(id).addEventListener("input", () => { const f = "brightness(" + ($("bright").value / 100) + ") contrast(" + ($("contrast").value / 100) + ")"; $("imgL").style.filter = f; $("imgR").style.filter = f; });
+  $("bright").dispatchEvent(new Event("input"));
+  $("cancel").addEventListener("click", () => { S.pending = null; refresh(); });
+  $("home").addEventListener("click", () => { if (S.rid) selectRequest(S.rid, true); });
+
+  // ---------- start ----------
+  $("staff").addEventListener("toggle", () => { if ($("staff").open) loadPeople(); });
+  renderAccount(); refresh();
+  (async () => {
+    const h = takeHash();
+    if (!session) session = loadSession();
+    if (h && h.error) setStatus("That email link didn't work: " + h.error + ". Ask for a new one below.", true);
+    if (h && h.type === "recovery") { S.recovery = true; renderAccount(); return; }
+    if (!session) { $("saveNote").textContent = "Sign in or register to see the requests."; renderQueue(); return; }
+    try { await afterLogin(); if (h && h.type === "signup") setStatus("Email confirmed. A referee will approve your account soon."); }
+    catch (err) { saveSession(null); renderAccount(); $("saveNote").textContent = "Sign in to continue."; }
+  })();
+})();
+</script>
+</body></html>
