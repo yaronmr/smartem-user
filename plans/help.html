@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plan Desk help</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root { --bg: #f3f4f2; --panel: #ffffff; --ink: #1d2226; --muted: #5d666e; --rule: #d9ddd9; --accent: #1f5f7a;
+        --sub: #1f9d55; --nr: #e11d48 }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15191c; --panel: #1d2226; --ink: #e6e9e7; --muted: #9aa4ab; --rule: #333b40; --accent: #6cb6d4; --sub: #3ddc84; --nr: #ff5c7a } }
+:root[data-theme="dark"] { --bg: #15191c; --panel: #1d2226; --ink: #e6e9e7; --muted: #9aa4ab; --rule: #333b40; --accent: #6cb6d4; --sub: #3ddc84; --nr: #ff5c7a }
+* { box-sizing: border-box }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 "Public Sans", "Segoe UI", system-ui, sans-serif }
+main { max-width: 760px; margin: 0 auto; padding: 28px 16px 64px; display: grid; gap: 22px }
+h1 { font: 600 2rem/1.15 Georgia, serif; margin: 0 }
+h2 { font: 600 1.3rem/1.2 Georgia, serif; margin: 0 0 6px }
+p, ol, ul { margin: 0 }
+ol, ul { padding-left: 22px; display: grid; gap: 6px }
+section { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 20px; display: grid; gap: 10px }
+a { color: var(--accent) }
+.lede { color: var(--muted) }
+kbd, .btn { font: 600 13px/1 ui-monospace, Consolas, monospace; border: 1px solid var(--rule); border-radius: 4px; padding: 2px 6px; white-space: nowrap; background: var(--bg) }
+.sw { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 4px }
+dt { font-weight: 600 } dd { margin: 0 0 8px; color: var(--ink) }
+</style>
+</head>
+<body>
+<main>
+  <header style="display:grid;gap:8px">
+    <p><a href="./">← Back to Plan Desk</a></p>
+    <h1>How to use Plan Desk</h1>
+    <p class="lede">Plan Desk shows the microscope's planned outlines on every section of a wafer. You correct the outlines on a
+      few sections, called <b>key sections</b>, and every other section is filled in from them. The imaging plan is
+      built later from your key sections. Nothing you do here moves the microscope.</p>
+  </header>
+
+  <section>
+    <h2>1. Get access (once)</h2>
+    <ol>
+      <li>On the Plan Desk page, choose <span class="btn">Register</span>. Enter your name, your email and a password
+        (at least 8 characters).</li>
+      <li>Open the confirmation email and click its link. You come back to Plan Desk, which says
+        <b>Waiting for approval</b>.</li>
+      <li>The person who invited you gives you access. Then press <span class="btn">Check again</span> or reload the page.</li>
+    </ol>
+    <p>Next time, just <span class="btn">Sign in</span>. Forgot your password? Choose
+      <span class="btn">Forgot password</span> and follow the emailed link.</p>
+  </section>
+
+  <section>
+    <h2>2. What you see</h2>
+    <ul>
+      <li>Choose a wafer (for example <b>W15 plan</b>). One section is shown at a time.</li>
+      <li><span class="sw" style="background:var(--sub)"></span><b>Green</b> outline: the Subumbrella.
+        <span class="sw" style="background:var(--nr)"></span><b>Red</b> outline: the NR.</li>
+      <li><b>Long-dashed</b> outlines were filled in from the key sections around this one. <b>Solid</b> outlines are a
+        key section or your edit in progress (before any key section exists, the automatic plan is shown solid). A faint
+        dotted outline shows the original automatic plan underneath.</li>
+      <li>The cyan dot is a focus point; you don't need to move it.</li>
+      <li>Move between sections with the slider, the <kbd>←</kbd> <kbd>→</kbd> keys or the mouse wheel.
+        <kbd>Ctrl</kbd> + wheel zooms; drag the picture to move it.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>3. Correct a section</h2>
+    <ol>
+      <li><b>Choose where.</b> In the right-hand box, <b>Correct these next</b> lists the sections that most need fixing,
+        worst first. Click one to go there.</li>
+      <li><b>Fix an outline, the easy way: the brush.</b> Press <span class="btn">Brush Subumbrella</span> or
+        <span class="btn">Brush NR</span>. The coloured area is the current outline.
+        <ul>
+          <li>With <span class="btn">+ Add</span> selected, drag over tissue the outline misses.</li>
+          <li>Press <span class="btn">− Remove</span> (or hold <kbd>Shift</kbd>, or drag with the right mouse button) and drag
+            over anything it should not include.</li>
+          <li>Change the brush size with the slider or the <kbd>[</kbd> <kbd>]</kbd> keys. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a stroke.</li>
+          <li>Press <span class="btn">Done: make outline</span>. The coloured area becomes the new outline.</li>
+        </ul>
+      </li>
+      <li><b>Or move points.</b> Press <span class="btn">Edit outlines and node</span>. Drag a point; click an edge to add a
+        point; right-click a point to remove it.</li>
+      <li><b>Fix both outlines if both are off.</b> An outline you don't touch is saved exactly as it is shown.</li>
+      <li>Press <span class="btn">Save as key section</span>. The sections between your key sections update at once.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>4. Check and repeat</h2>
+    <ul>
+      <li>Scroll through the sections. Wherever a long-dashed outline drifts off the tissue, correct that section and save it too.</li>
+      <li><b>Your key sections</b> (right) lists every key section. For each outline it says <b>drawn</b> (someone redrew
+        it) or <b>as shown</b> (saved without redrawing). Ticks under the section slider mark where they are.</li>
+      <li>About 8–10 well-spread key sections are usually enough. The list <b>Correct these next</b> is refreshed after new
+        key sections are saved.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Questions</h2>
+    <dl>
+      <dt>I made a mistake before saving.</dt>
+      <dd>Press <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo, or go to another section without saving.</dd>
+      <dt>I saved a section I shouldn't have.</dt>
+      <dd>Go to it and press <span class="btn">Back to the plan</span>. That removes its key section.</dd>
+      <dt>Someone else is working on the same wafer.</dt>
+      <dd>Everyone sees the same key sections, and the page refreshes them about every 20 seconds. Saving a section again
+        replaces the earlier version. Every save is kept on record.</dd>
+      <dt>The picture doesn't load.</dt>
+      <dd>Reload the page. If it still fails, tell the person who invited you.</dd>
+      <dt>Does anything I do change the microscope?</dt>
+      <dd>No. The imaging plan is built from the saved key sections later, and checked before it is used.</dd>
+    </dl>
+  </section>
+</main>
+</body></html>

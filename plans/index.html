@@ -97,6 +97,7 @@ select, input[type=text] { width: 100%; font: inherit; font-size: 13.5px; color:
 .pd-f input { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 5px; padding: 7px 8px }
 .pd-list { display: grid; gap: 6px; font-size: 14px }
 details.pd-card > summary { cursor: pointer; font-weight: 600 }
+#pd-bar a { margin-right: auto }
 #pd-bar { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; max-width: 1240px; margin: 0 auto; padding: 10px 20px 0; font-size: 13px; color: var(--muted) }
 </style>
 </head>
@@ -108,7 +109,7 @@ details.pd-card > summary { cursor: pointer; font-weight: 600 }
   <header style="display:grid;gap:8px">
     <div class="meta">Plan Desk</div>
     <h1>Plan Desk</h1>
-    <p class="lede">Access by invitation. Sign in to continue.</p>
+    <p class="lede">Access by invitation. Sign in to continue. New here? <a href="help.html">Read how to register and use Plan Desk</a>.</p>
     <div class="status"><span class="dot" id="pd-dot"></span><span id="pd-status">Checking your sign-in…</span></div>
   </header>
 
@@ -150,7 +151,7 @@ details.pd-card > summary { cursor: pointer; font-weight: 600 }
     <h3>Members</h3><div id="pd-mem" class="pd-list"></div>
   </details>
 </div>
-<div id="pd-bar" hidden><span id="pd-bar-who"></span><button type="button" class="ghost" id="pd-bar-wafers">Wafers</button><button type="button" class="ghost" id="pd-bar-out">Sign out</button></div>
+<div id="pd-bar" hidden><a href="help.html" target="_blank" rel="noopener">Help</a><span id="pd-bar-who"></span><button type="button" class="ghost" id="pd-bar-wafers">Wafers</button><button type="button" class="ghost" id="pd-bar-out">Sign out</button></div>
 <div id="pd-editor" hidden>
 <div class="wrap">
   <header style="display:grid;gap:8px">
@@ -162,9 +163,9 @@ details.pd-card > summary { cursor: pointer; font-weight: 600 }
 
   <section class="how" aria-label="How to use this page">
     <ol>
-      <li>Find a section (slider, arrow keys or mouse wheel; Ctrl + wheel zooms; drag to pan).</li>
-      <li>Press <b>Edit outlines and node</b>. Drag a point; drag the small circle on an edge, or click the edge, to add a point; right-click or Alt-click a point to remove it; Ctrl+Z undoes. Or press <b>Draw … anew</b> and click (or trace) a whole new outline.</li>
-      <li>Press <b>Save as key section</b>. Scroll through: the other sections follow at once. Fix the worst remaining one, save it, repeat.</li>
+      <li><b>Pick a section:</b> click one under <b>Correct these next</b> (right), or move with the slider, the arrow keys or the mouse wheel. Ctrl + wheel zooms; drag to move the picture.</li>
+      <li><b>Fix its outlines:</b> press <b>Brush …</b> and paint the area (<b>+ Add</b> / <b>− Remove</b>, then <b>Done: make outline</b>), or press <b>Edit outlines and node</b> and drag the points. Fix both outlines if both are off: an outline you don't touch is saved as it is shown.</li>
+      <li><b>Press Save as key section.</b> Every section between your key sections follows at once (long-dashed outlines). Then fix the next section in the list. <b>Back to the plan</b> removes the current section's key section if you change your mind.</li>
     </ol>
     <p class="hint" id="saved-ex">Key sections saved: …</p>
   </section>
@@ -807,7 +808,7 @@ function renderSuggest() {
     host.append(b);
   }
   const base = Array.isArray(suggest.based_on) && suggest.based_on.length ? suggest.based_on.join(" + ") : "the plan alone";
-  $("#bt-next-note").textContent = "Worst first: where the outlines now sit farthest from the tissue, measured by dce04 from " + base + (suggest.stamp ? " (" + suggest.stamp + ")" : "") + ". Click one to go there. The list is redone after each new key section." + (suggest.note ? " " + suggest.note : "");
+  $("#bt-next-note").textContent = "Worst first: where the outlines now sit farthest from the tissue, measured from " + base + (suggest.stamp ? " (" + suggest.stamp + ")" : "") + ". Click one to go there. The list is redone after each new key section." + (suggest.note ? " " + suggest.note : "");
 }
 /* ── key sections: where they are, and which outlines were redrawn there ── */
 function snapOrig(rings) { const o = {}; for (const nm in rings) o[nm] = JSON.stringify(rings[nm]); return o; }
