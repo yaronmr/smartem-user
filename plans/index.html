@@ -796,6 +796,9 @@ let suggest = null;   // {stamp, based_on: ["z000", ...], keys: [154, ...] (wors
 function renderSuggest() {
   const wrap = $("#bt-next-wrap"), host = $("#bt-next");
   if (!wrap || typeof KEYS === "undefined") return;
+  if (suggest && !Array.isArray(suggest.keys) && Array.isArray(suggest.picks))   // the suggester's picks.json, stored as is
+    suggest = Object.assign({}, suggest, { keys: suggest.picks.slice().sort((x, y) => (x.rank || 0) - (y.rank || 0)).map(x => x.k),
+                                           based_on: suggest.based_on || (suggest.key_sections || []).map(z => "z" + String(z).padStart(3, "0")) });
   const ok = suggest && Array.isArray(suggest.keys) && suggest.keys.length;
   wrap.hidden = !ok; if (!ok) return;
   host.replaceChildren();
