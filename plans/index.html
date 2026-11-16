@@ -808,7 +808,7 @@ function renderSuggest() {
     host.append(b);
   }
   const base = Array.isArray(suggest.based_on) && suggest.based_on.length ? suggest.based_on.join(" + ") : "the plan alone";
-  $("#bt-next-note").textContent = "Worst first: where the outlines now sit farthest from the tissue, measured from " + base + (suggest.stamp ? " (" + suggest.stamp + ")" : "") + ". Click one to go there. The list is redone after each new key section." + (suggest.note ? " " + suggest.note : "");
+  $("#bt-next-note").textContent = "Worst first: where the outlines now sit farthest from the tissue, measured from " + base + (suggest.stamp ? " (" + suggest.stamp + ")" : "") + ". Click one to go there. The list is updated from time to time as key sections are added." + (suggest.note ? " " + suggest.note : "");
 }
 /* ── key sections: where they are, and which outlines were redrawn there ── */
 function snapOrig(rings) { const o = {}; for (const nm in rings) o[nm] = JSON.stringify(rings[nm]); return o; }
