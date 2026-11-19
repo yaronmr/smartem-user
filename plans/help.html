@@ -41,7 +41,8 @@ dt { font-weight: 600 } dd { margin: 0 0 8px; color: var(--ink) }
         (at least 8 characters).</li>
       <li>Open the confirmation email and click its link. You come back to Plan Desk, which says
         <b>Waiting for approval</b>.</li>
-      <li>The person who invited you gives you access. Then press <span class="btn">Check again</span> or reload the page.</li>
+      <li>Tell the person who invited you that you have registered: Plan Desk does not email them. Once they give you
+        access, the page opens by itself within half a minute (or press <span class="btn">Check again</span>).</li>
     </ol>
     <p>Next time, just <span class="btn">Sign in</span>. Forgot your password? Choose
       <span class="btn">Forgot password</span> and follow the emailed link.</p>
@@ -57,8 +58,12 @@ dt { font-weight: 600 } dd { margin: 0 0 8px; color: var(--ink) }
         key section or your edit in progress (before any key section exists, the automatic plan is shown solid). A faint
         dotted outline shows the original automatic plan underneath.</li>
       <li>The cyan dot is a focus point; you don't need to move it.</li>
-      <li>Move between sections with the slider, the <kbd>←</kbd> <kbd>→</kbd> keys or the mouse wheel.
-        <kbd>Ctrl</kbd> + wheel zooms; drag the picture to move it.</li>
+      <li>Move between sections with the slider, the <kbd>←</kbd> <kbd>→</kbd> keys or the mouse wheel
+        (<kbd>Page Up</kbd> / <kbd>Page Down</kbd> jump ten sections, <kbd>Home</kbd> / <kbd>End</kbd> go to the first and last).
+        <kbd>Ctrl</kbd> + wheel zooms; drag the picture to move it. The page reopens on the section you were last on.</li>
+      <li>Hold <kbd>H</kbd> to hide the outlines and see the tissue under them.</li>
+      <li>A section you have changed and not saved yet is marked <b>not saved</b> on the picture, with a tick under the
+        slider, and is listed under <b>Not saved yet</b> on the right.</li>
     </ul>
   </section>
 
@@ -67,7 +72,17 @@ dt { font-weight: 600 } dd { margin: 0 0 8px; color: var(--ink) }
     <ol>
       <li><b>Choose where.</b> In the right-hand box, <b>Correct these next</b> lists the sections that most need fixing,
         worst first. Click one to go there.</li>
-      <li><b>Fix an outline, the easy way: the brush.</b> Press <span class="btn">Brush Subumbrella</span> or
+      <li><b>Right shape, wrong place: move it.</b> Press <span class="btn">Move outlines</span> (or <kbd>M</kbd>) and drag
+        on the picture; the outlines follow the mouse.
+        <ul>
+          <li>Hold <kbd>Alt</kbd> and drag to turn them, or press <span class="btn">Turn left</span> / <span class="btn">Turn right</span> (1° each).</li>
+          <li>For small steps use the arrow buttons or <kbd>Shift</kbd> + arrow keys; choose the step (0.5 to 20 µm) next to them.</li>
+          <li><b>Move</b> chooses all outlines or only one. The focus node moves with them unless you untick it.</li>
+          <li>The page says how far the section has been moved. Move stays on while you go through the sections;
+            <span class="btn">Done moving</span> or <kbd>Esc</kbd> turns it off.</li>
+        </ul>
+      </li>
+      <li><b>Wrong shape: the brush.</b> Press <span class="btn">Brush Subumbrella</span> or
         <span class="btn">Brush NR</span>. The coloured area is the current outline.
         <ul>
           <li>With <span class="btn">+ Add</span> selected, drag over tissue the outline misses.</li>
@@ -77,10 +92,15 @@ dt { font-weight: 600 } dd { margin: 0 0 8px; color: var(--ink) }
           <li>Press <span class="btn">Done: make outline</span>. The coloured area becomes the new outline.</li>
         </ul>
       </li>
-      <li><b>Or move points.</b> Press <span class="btn">Edit outlines and node</span>. Drag a point; click an edge to add a
-        point; right-click a point to remove it.</li>
+      <li><b>Or move single points.</b> Press <span class="btn">Edit points</span>. Drag a point; click an edge to add a
+        point; right-click a point to remove it. The focus node can be dragged here too.</li>
       <li><b>Fix both outlines if both are off.</b> An outline you don't touch is saved exactly as it is shown.</li>
-      <li>Press <span class="btn">Save as key section</span>. The sections between your key sections update at once.</li>
+      <li>Press <span class="btn">Save as key section</span> (or <kbd>Ctrl</kbd>+<kbd>S</kbd>). The page answers
+        <b>saved as a key section</b>, or says plainly that it was <b>not saved</b> and why. The sections between your key
+        sections update at once, and <span class="btn">Next to correct</span> takes you to the next suggested section.</li>
+      <li>You can correct several sections before saving. They are listed under <b>Not saved yet</b>;
+        <span class="btn">Save all of them</span> saves them together. Unsaved changes exist only in your browser tab:
+        the page warns you before you close it or sign out.</li>
     </ol>
   </section>
 
@@ -99,14 +119,24 @@ dt { font-weight: 600 } dd { margin: 0 0 8px; color: var(--ink) }
     <h2>Questions</h2>
     <dl>
       <dt>I made a mistake before saving.</dt>
-      <dd>Press <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo, or go to another section without saving.</dd>
+      <dd>Press <span class="btn">Undo</span> (<kbd>Ctrl</kbd>+<kbd>Z</kbd>) to go back one step, or
+        <span class="btn">Discard my changes</span> to drop everything you changed on this section since its last save.
+        If you discard by mistake, <span class="btn">Put my changes back</span> appears right after.</dd>
       <dt>I saved a section I shouldn't have.</dt>
-      <dd>Go to it and press <span class="btn">Back to the plan</span>. That removes its key section.</dd>
+      <dd>Go to it and press <span class="btn">Remove key section</span>. The page asks first, because this changes the
+        outlines for everyone. <span class="btn">Put the key section back</span> appears right after, in case it was a mistake.</dd>
       <dt>Someone else is working on the same wafer.</dt>
-      <dd>Everyone sees the same key sections, and the page refreshes them about every 20 seconds. Saving a section again
-        replaces the earlier version. Every save is kept on record.</dd>
-      <dt>The picture doesn't load.</dt>
-      <dd>Reload the page. If it still fails, tell the person who invited you.</dd>
+      <dd>Everyone sees the same key sections, and the page refreshes them about every 20 seconds. Each key section shows
+        who saved it and when. If someone saves a section while you are changing the same one, the page tells you when
+        you save and lets you choose: keep yours, or take theirs. Every save is kept on record.</dd>
+      <dt id="picture">The picture doesn't load.</dt>
+      <dd>The pictures come from a Harvard server that some browsers refuse; this has been seen with Firefox. Open Plan
+        Desk in <b>Chrome</b> or <b>Edge</b>. If the picture is still missing, press <span class="btn">Try again</span> on
+        the message, and if that fails tell the person who invited you. Do not correct outlines without the picture.</dd>
+      <dt>The buttons are greyed out and the page says "View only".</dt>
+      <dd>Your account can look at the plans but not change them. Ask the person who invited you for editing access.</dd>
+      <dt>The page asks me to sign in again while I am working.</dt>
+      <dd>Sign-ins end after a while. Enter your password in the box; your unsaved changes stay on the page. Then press Save again.</dd>
       <dt>Does anything I do change the microscope?</dt>
       <dd>No. The imaging plan is built from the saved key sections later, and checked before it is used.</dd>
     </dl>
