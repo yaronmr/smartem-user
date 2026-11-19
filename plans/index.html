@@ -464,22 +464,37 @@ function bodyOf(k) {
 }
 async function saveKey(k, interactive) {   // "saved" | "conflict" | "cancel" | "error" (saveErr says why)
   const e = edits[k]; if (!e || !canSave(k)) return "cancel";
-  let cur = exemplars[k] || null;
-  try { if (db.pdCurrent) cur = await db.pdCurrent(k); }
-  catch (err) { saveErr = errText(err); return "error"; }
-  if (cur && cur.saved_at !== e.base) {   // somebody saved this section after the edit here began
-    if (!interactive) return "conflict";
-    const a = await ask(k + " was saved by someone else while you worked",
-      (cur.by || "Someone else") + " saved " + k + " on " + when(cur.saved_at) + ", after you started. Only one version can be kept.",
-      [["Save mine (replace theirs)", "mine", true], ["Take theirs (discard mine)", "theirs"], ["Cancel", null]]);
-    if (a === "theirs") { delete edits[k]; delete notes[k]; applyExemplar(k, cur); PROP.cache.clear(); if (k === curKey()) $("#ed-note").value = noteOf(k); saveErr = "took"; return "cancel"; }
-    if (a !== "mine") return "cancel";
+  // The write itself checks that the server still holds the version this edit started from (e.base), so a save by
+  // someone else in between is never overwritten silently. Page databases without that check simply overwrite.
+  let base = e.base == null ? null : e.base;
+  for (let round = 0; round < 3; round++) {
+    const body = bodyOf(k);
+    try { await db.doc("exemplars/" + k).set(body, { base }); }
+    catch (err) {
+      if (err.code !== "conflict") { saveErr = errText(err); return "error"; }
+      if (!interactive) return "conflict";
+      let cur = null;
+      try { if (db.pdCurrent) cur = await db.pdCurrent(k); } catch (err2) { saveErr = errText(err2); return "error"; }
+      const a = cur
+        ? await ask(k + " was saved by someone else while you worked",
+            (cur.by || "Someone else") + " saved " + k + " on " + when(cur.saved_at) + ", after you started. Only one version can be kept.",
+            [["Save mine (replace theirs)", "mine", true], ["Take theirs (discard mine)", "theirs"], ["Cancel", null]])
+        : await ask(k + " was removed by someone else while you worked",
+            "Its key section was removed after you started. Save yours as a new key section, or drop your changes.",
+            [["Save mine as a new key section", "mine", true], ["Drop my changes", "theirs"], ["Cancel", null]]);
+      if (a === "theirs") {
+        delete edits[k]; delete notes[k];
+        if (cur) applyExemplar(k, cur); else delete exemplars[k];
+        PROP.cache.clear(); if (k === curKey()) $("#ed-note").value = noteOf(k); saveErr = "took"; return "cancel";
+      }
+      if (a !== "mine") return "cancel";
+      base = cur ? cur.saved_at : null;   // "mine" replaces exactly the version just shown; if it changes again, ask again
+      continue;
+    }
+    e.dirty = false; e.base = body.saved_at; e.clean = editJson(e); e.mv = [0, 0, 0]; delete notes[k]; exemplars[k] = body; PROP.cache.clear();
+    return "saved";
   }
-  const body = bodyOf(k);
-  try { await db.doc("exemplars/" + k).set(body); }
-  catch (err) { saveErr = errText(err); return "error"; }
-  e.dirty = false; e.base = body.saved_at; e.clean = editJson(e); e.mv = [0, 0, 0]; delete notes[k]; exemplars[k] = body; PROP.cache.clear();
-  return "saved";
+  saveErr = "it kept changing while you chose; open it again"; return "error";
 }
 const sugKey = x => typeof x === "number" ? "z" + String(x).padStart(3, "0") : String(x);
 function offerNext(k) {
@@ -537,8 +552,11 @@ async function removeKey() {   // shared: removes the saved key section for ever
     + (isUnsaved(k) ? " Your unsaved changes on " + k + " are dropped too." : ""),
     [["Remove key section", "go", true], ["Keep it", null]]);
   if (a !== "go") return;
-  try { await db.doc("exemplars/" + k).delete(); }
-  catch (err) { say(k + " was NOT removed: " + errText(err) + "."); return; }
+  try { await db.doc("exemplars/" + k).delete({ seen: doc.saved_at }); }
+  catch (err) {
+    say(k + " was NOT removed: " + (err.code === "conflict" ? "it was changed or removed by someone else meanwhile (or your access changed); the page now shows the latest version" : errText(err)) + ".");
+    return;
+  }
   delete exemplars[k]; delete edits[k]; delete notes[k]; PROP.cache.clear(); $("#ed-note").value = "";
   offerBack({ k, kind: "key", doc }, "Put the key section back");
   say(k + ": key section removed. It now follows the other key sections, or the plan.");
@@ -547,8 +565,12 @@ async function removeKey() {   // shared: removes the saved key section for ever
 async function putBack() {
   const g = lastGone; if (!g) return;
   if (g.kind === "key") {
-    try { await db.doc("exemplars/" + g.k).set(g.doc); }
-    catch (err) { say("Could not put it back: " + errText(err) + ". Try again."); return; }
+    try { await db.doc("exemplars/" + g.k).set(g.doc, { base: null }); }   // only if nobody has saved this section since
+    catch (err) {
+      say(err.code === "conflict" ? g.k + " was not put back: someone has saved a key section there since. The page shows theirs." : "Could not put it back: " + errText(err) + ". Try again.");
+      if (err.code === "conflict") { lastGone = null; $("#ed-back").hidden = true; }
+      return;
+    }
     applyExemplar(g.k, g.doc); PROP.cache.clear(); say(g.k + ": the key section is back.");
   } else { edits[g.k] = g.e; if (g.note !== undefined) notes[g.k] = g.note; say(g.k + ": your changes are back. They are still not saved."); }
   lastGone = null; $("#ed-back").hidden = true; $("#ed-note").value = noteOf(curKey());
@@ -1581,18 +1603,35 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
         const [coll, key] = path.split("/");
         if (coll !== "exemplars") throw new Error("only key sections can be written from this page");
         return {
-          async set(body) {
-            await guard(api("POST", "pd_exemplars?on_conflict=wafer,key", { wafer, key, doc: body }, "resolution=merge-duplicates,return=minimal"));
-            pull("exemplars").catch(() => {});
+          // opt.base: the saved_at the edit started from (null: there was no key section). The write lands only if the
+          // server still holds that version, in one request (compare-and-set); otherwise it throws code "conflict".
+          // Without opt (or opt.force) it overwrites, as before.
+          async set(body, opt) {
+            const row = "pd_exemplars?wafer=eq." + enc(wafer) + "&key=eq." + enc(key);
+            try {
+              if (!opt || opt.force) await guard(api("POST", "pd_exemplars?on_conflict=wafer,key", { wafer, key, doc: body }, "resolution=merge-duplicates,return=minimal"));
+              else if (opt.base == null) await guard(api("POST", "pd_exemplars", { wafer, key, doc: body }, "return=minimal"));   // insert only
+              else {
+                const got = await guard(api("PATCH", row + "&doc->>saved_at=eq." + enc(opt.base), { doc: body }, "return=representation"));
+                if (!got.length) throw conflictError();
+              }
+            } catch (e) { throw e.status === 409 ? conflictError() : e; }
+            finally { pull("exemplars").catch(() => {}); }
           },
-          async delete() {
-            await guard(api("DELETE", "pd_exemplars?wafer=eq." + enc(wafer) + "&key=eq." + enc(key), null, "return=minimal"));
-            pull("exemplars").catch(() => {});
+          // opt.seen: the saved_at the person looked at; nothing is removed if the server holds another version.
+          // A delete that removes no row (changed meanwhile, or no permission any more) is reported, not taken as done.
+          async delete(opt) {
+            try {
+              const got = await guard(api("DELETE", "pd_exemplars?wafer=eq." + enc(wafer) + "&key=eq." + enc(key)
+                + (opt && opt.seen ? "&doc->>saved_at=eq." + enc(opt.seen) : ""), null, "return=representation"));
+              if (!got.length) throw conflictError();
+            } finally { pull("exemplars").catch(() => {}); }
           },
         };
       },
     };
   }
+  function conflictError() { const e = new Error("changed by someone else meanwhile"); e.code = "conflict"; return e; }
   function editingNow() {                           // don't redraw from the server while someone is dragging or brushing
     try { return !!(grab || brushing || drawing); } catch (_) { return false; }   // the editor's script-level lets
   }
