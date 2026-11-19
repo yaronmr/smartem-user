@@ -1498,9 +1498,10 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
     const [reqs, mems] = await Promise.all([
       api("GET", "pd_requests?select=user_id,email,display_name,requested_at&order=requested_at.asc"),
       api("GET", "pd_access?select=user_id,email,display_name,role,added_at&order=added_at.asc")]);
-    const label = "People" + (reqs.length ? " (" + reqs.length + " waiting)" : "");
+    const waiting = reqs.filter(r => !mems.some(m => m.user_id === r.user_id)).length;
+    const label = "People" + (waiting ? " (" + waiting + " waiting)" : "");
     $id("pd-people-open").textContent = label; $id("pd-bar-people").textContent = label;
-    $id("pd-bar-people").classList.toggle("pd-alert", !!reqs.length);
+    $id("pd-bar-people").classList.toggle("pd-alert", !!waiting);
     const msg = $id("pd-people-msg");
     const mk = (tag, text, cls) => { const e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; };
     const row = (txt, ...kids) => { const d = mk("div", "", "row"); d.append(mk("span", txt), ...kids); return d; };
@@ -1512,7 +1513,10 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
     const btn = (text, fn, ghost) => { const x = mk("button", text, ghost ? "ghost" : ""); x.type = "button"; x.addEventListener("click", fn); return x; };
     const roleSel = (cur, roles) => { const s = mk("select"); for (const r of roles) { const o = mk("option", ROLE_TEXT[r]); o.value = r; s.append(o); } s.value = cur; s.setAttribute("aria-label", "Access"); return s; };
     const who = p => (p.display_name ? p.display_name + " · " : "") + (p.email || p.user_id);
+    const memberIds = new Set(mems.map(m => m.user_id));
     $id("pd-req").replaceChildren(...(reqs.length ? reqs.map(r => {
+      if (memberIds.has(r.user_id))                     // an old request from someone who already has access
+        return row(who(r) + " · already a member", btn("Clear", () => run(() => api("DELETE", "pd_requests?user_id=eq." + enc(r.user_id), null, "return=minimal"), "Cleared the old request of " + r.email + "."), true));
       const sel = roleSel("editor", ["editor", "viewer"]);
       return row(who(r), sel,
         btn("Give access", () => run(async () => {
