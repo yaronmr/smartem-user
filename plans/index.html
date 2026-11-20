@@ -125,6 +125,10 @@ dialog > * + * { margin-top: 10px }
 .pd-build pre { max-height: 300px; overflow: auto; white-space: pre-wrap; font-size: 12px; margin: 0 }
 .pd-badge { font: 600 12px/1 ui-monospace, Consolas, monospace; border: 1px solid currentColor; border-radius: 4px; padding: 3px 6px; margin-right: 8px }
 .pd-badge.approved { color: var(--ok, #15803d) } .pd-badge.ready { color: var(--warn, #b45309) } .pd-badge.rejected, .pd-badge.superseded { color: var(--muted) }
+.pd-badge.done { color: var(--ok, #15803d) } .pd-badge.waiting, .pd-badge.running { color: var(--warn, #b45309) } .pd-badge.failed { color: var(--bad, #b91c1c) }
+.pd-build ul { margin: 0; padding-left: 18px }
+#pd-focus { width: min(680px, 94vw) }
+#pd-focus h3 { font-size: 14px }
 #pd-people { width: min(680px, 94vw) }
 #pd-people h3 { font-size: 14px }
 button.pd-alert { border-color: var(--warn, #b45309); color: var(--warn, #b45309); font-weight: 600 }
@@ -192,6 +196,14 @@ button.pd-alert { border-color: var(--warn, #b45309); color: var(--warn, #b45309
   <div id="pd-builds-list" class="pd-list"></div>
   <div class="row"><button type="button" class="ghost" id="pd-builds-close">Close</button></div>
 </dialog>
+<dialog id="pd-focus">
+  <h2>Focus points for <span id="pd-focus-wafer"></span></h2>
+  <p class="hint">The cyan dot on each section is where the microscope will focus. Press the button after you have saved key sections: every section's outline is worked out from them again, and each section gets one focus point inside its outline. A focus point you placed by hand is never replaced. Nothing moves at the microscope: the operator takes the plan into the desktop app when it is ready.</p>
+  <div class="row"><button type="button" id="pd-focus-go" hidden>Compute focus points</button><span class="saved" id="pd-focus-msg" role="status"></span></div>
+  <h3>Latest runs</h3>
+  <div id="pd-focus-list" class="pd-list"></div>
+  <div class="row"><button type="button" class="ghost" id="pd-focus-close">Close</button></div>
+</dialog>
 <dialog id="pd-relogin">
   <h2>Sign in again</h2>
   <p>Your sign-in has ended. Nothing on this page is lost: enter the password for <b id="pd-relogin-email"></b> and carry on.</p>
@@ -200,7 +212,7 @@ button.pd-alert { border-color: var(--warn, #b45309); color: var(--warn, #b45309
     <div class="row"><button type="submit">Sign in</button><button type="button" class="ghost" id="pd-relogin-out">Sign out instead</button><span class="saved" id="pd-relogin-msg" role="status"></span></div>
   </form>
 </dialog>
-<div id="pd-bar" hidden><a href="help.html" target="_blank" rel="noopener">Help</a><span id="pd-bar-who"></span><button type="button" class="ghost" id="pd-bar-builds" hidden>Builds</button><button type="button" class="ghost" id="pd-bar-people" hidden>People</button><button type="button" class="ghost" id="pd-bar-wafers">Wafers</button><button type="button" class="ghost" id="pd-bar-out">Sign out</button></div>
+<div id="pd-bar" hidden><a href="help.html" target="_blank" rel="noopener">Help</a><span id="pd-bar-who"></span><button type="button" class="ghost" id="pd-bar-focus" hidden>Focus points</button><button type="button" class="ghost" id="pd-bar-builds" hidden>Builds</button><button type="button" class="ghost" id="pd-bar-people" hidden>People</button><button type="button" class="ghost" id="pd-bar-wafers">Wafers</button><button type="button" class="ghost" id="pd-bar-out">Sign out</button></div>
 <div id="pd-editor" hidden>
 <div class="wrap">
   <header class="top">
@@ -1636,6 +1648,79 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
     }) : [mk("div", "No builds yet. A build appears here when someone publishes one from the saved key sections.")]));
   }
 
+  // ---------- focus points: ask the plan engine to work them out again from the saved key sections ----------
+  // The page only adds a waiting row to pd_build_runs. A worker signed in with a "pc" account answers it (the same
+  // engine as the desktop app's "Import from Plan Desk"), writes pd_auto_nodes and marks the row done or failed.
+  const FOCUS_SLOW_S = 90, FOCUS_STUCK_S = 300;
+  const RUN_TEXT = { waiting: "waiting", running: "working", done: "done", failed: "did not work" };
+  let focusWafer = "", focusT = 0, focusTick = 0, focusOpenId = "", refreshFocusDots = null;
+  const canAskFocus = () => !!member && ["editor", "admin"].includes(member.role);
+  const ageS = t => (Date.now() - new Date(t).getTime()) / 1000;
+  function focusOpenRun(rows) {                      // the run still in progress, if any (a run stuck for minutes does not block a new one)
+    return rows.find(r => r.status === "waiting" || (r.status === "running" && ageS(r.started_at || r.asked_at) < FOCUS_STUCK_S)) || null;
+  }
+  function focusMessage(run) {
+    if (!run) return "";
+    if (run.status === "running") return "Working on it (about 10 seconds)…";
+    const s = ageS(run.asked_at);
+    return s < FOCUS_SLOW_S ? "Asked. Waiting for the plan computer to pick it up (usually under half a minute)…"
+      : "Asked " + Math.max(2, Math.round(s / 60)) + " minutes ago and not picked up yet. The request stays in line and is answered as soon as the plan computer is back; if this lasts, tell an administrator that the plan worker is not running.";
+  }
+  async function loadFocus() {
+    const rows = await api("GET", "pd_build_runs?select=id,origin,status,asked_by,asked_at,started_at,finished_at,done_by,message,lines:summary->lines&wafer=eq."
+      + enc(focusWafer) + "&order=asked_at.desc&limit=5");
+    $id("pd-bar-focus").hidden = false;
+    $id("pd-focus-wafer").textContent = focusWafer;
+    const run = focusOpenRun(rows), msg = $id("pd-focus-msg"), go = $id("pd-focus-go");
+    go.hidden = !canAskFocus(); go.disabled = !!run;
+    $id("pd-bar-focus").textContent = run ? "Focus points (working…)" : "Focus points";
+    if (run) msg.textContent = focusMessage(run);
+    else if (focusOpenId) {                           // the run this page was following has just ended
+      const was = rows.find(r => r.id === focusOpenId);
+      msg.textContent = !was ? "" : was.status === "done" ? "Done. The cyan dots on the sections are up to date."
+        : "It did not work: " + (was.message || "no reason was given") + ".";
+      if (was && was.status === "done" && refreshFocusDots) refreshFocusDots();
+    }
+    focusOpenId = run ? run.id : "";
+    const mk = (tag, text, cls) => { const e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; };
+    $id("pd-focus-list").replaceChildren(...(rows.length ? rows.map(r => {
+      const box = mk("div", "", "pd-build"), head = mk("div");
+      head.append(mk("span", RUN_TEXT[r.status] || r.status, "pd-badge " + r.status),
+        mk("span", (r.origin === "desktop" ? "Plan imported in the desktop app " : "Asked on this page ") + when(r.finished_at || r.asked_at)
+          + (r.origin !== "desktop" && peopleById[r.asked_by] ? " by " + peopleById[r.asked_by] : "")));
+      box.append(head);
+      if (Array.isArray(r.lines) && r.lines.length) { const ul = mk("ul"); for (const l of r.lines) ul.append(mk("li", String(l))); box.append(ul); }
+      if (r.status === "failed") box.append(mk("div", r.message || "No reason was given.", "hint"));
+      return box;
+    }) : [mk("div", "No run yet.")]));
+  }
+  const focusFail = e => { if (e.status === 401) { relogin(() => loadFocus().catch(() => {})); return; } $id("pd-focus-msg").textContent = "Could not read the runs: " + e.message; };
+  $id("pd-bar-focus").addEventListener("click", () => { loadFocus().catch(focusFail); $id("pd-focus").showModal(); });
+  $id("pd-focus-close").addEventListener("click", () => $id("pd-focus").close());
+  $id("pd-focus-go").addEventListener("click", async () => {
+    let n = 0; try { n = unsavedKeys().length; } catch (_) {}
+    if (n && !confirm(n + " section" + (n === 1 ? " has" : "s have") + " changes that are not saved yet. Only saved key sections are used. Compute the focus points anyway?")) return;
+    const go = $id("pd-focus-go"), msg = $id("pd-focus-msg");
+    go.disabled = true; msg.textContent = "Asking…";
+    try {
+      const got = await api("POST", "pd_build_runs", { wafer: focusWafer }, "return=representation");
+      focusOpenId = got && got[0] ? got[0].id : "";
+      await loadFocus();
+    } catch (e) {
+      go.disabled = false;
+      if (e.status === 401) { relogin(); msg.textContent = "Sign in again, then press the button once more."; }
+      else msg.textContent = e.status === 403 || e.status === 404 ? "Your account cannot ask for this (view-only accounts cannot)." : "Didn't work: " + e.message;
+    }
+  });
+  function startFocus(id) {                           // every 3 s while a run is in progress, otherwise every half minute
+    focusWafer = id; loadFocus().catch(() => {});     // the button shows once pd_build_runs can be read
+    if (!focusT) focusT = setInterval(() => {
+      focusTick++;
+      if (document.hidden || !(focusOpenId || focusTick % 10 === 0)) return;
+      loadFocus().catch(() => {});
+    }, 3000);
+  }
+
   // signed out in the middle of work: sign in again on top of the page, nothing on it is lost
   let reloginThen = null;
   function relogin(then) {
@@ -1674,6 +1759,7 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
     if (member.role !== "pc") {                        // the PC reads approved builds with its own command, not here
       buildsWafer = id; loadBuilds().catch(() => {});   // the button shows once pd_builds can be read
       if (!buildsT) buildsT = setInterval(() => { if (!document.hidden && !$id("pd-builds").open) loadBuilds().catch(() => {}); }, 60000);
+      startFocus(id);
     }
     $id("pd-bar-who").textContent = me.email + (CONFIG.read_only ? " (view only)" : "");
     const s = document.createElement("script");
@@ -1697,6 +1783,7 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
         catch (e) { for (const s of subs[name]) if (s.err) s.err(e); if (e.status === 401) { relogin(pullAll); return; } }
       }
     }
+    refreshFocusDots = () => { if (!editingNow()) pull("auto_nodes").catch(() => {}); };
     setInterval(() => { if (!document.hidden && !editingNow()) pullAll(); }, POLL_MS);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) pullAll(); });
     const guard = p => p.catch(e => { if (e.status === 401) relogin(pullAll); throw e; });
