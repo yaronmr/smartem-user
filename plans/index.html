@@ -445,11 +445,15 @@ function ringPts(k, nm) {   // what the section shows: your edit or key section,
   const p = propagatedRing(k, nm); if (p) return p;
   const r = GEO[k].rings[nm]; return r ? r.r : null;
 }
-function nodePts(k) { const e = edits[k]; return e ? e.nodes : GEO[k].nodes.map(n => n.r); }
+// The baseline focus point: the plan builder's automatic choice for the current outlines (Plan Desk's auto_nodes,
+// aligned px), else the base plan's point. A hand-placed point (nodeSet) replaces it; Let the plan choose goes back to it.
+let autoNodes = {}, autoMade = "";
+function baseNodes(k) { const a = autoNodes[k]; return a && a.length ? a.map(n => [(n.x - AX0) / RS, (n.y - AY0) / RS]) : GEO[k].nodes.map(n => n.r.slice()); }
+function nodePts(k) { const e = edits[k]; return e ? e.nodes : baseNodes(k); }
 function ensureEdit(k) {
   if (!edits[k] || (!edits[k].dirty && !exemplars[k])) {
     const rings = {}; for (const nm of ROIS) { const s = ringPts(k, nm); if (s) rings[nm] = s.map(p => p.slice()); }
-    edits[k] = newEdit(rings, GEO[k].nodes.map(n => n.r.slice()), exemplars[k] ? exemplars[k].saved_at : null);
+    edits[k] = newEdit(rings, baseNodes(k), exemplars[k] ? exemplars[k].saved_at : null);
   }
   return edits[k];
 }
@@ -466,7 +470,7 @@ function applyExemplar(k, v) {
   const e0 = edits[k];
   if (e0 && (e0.dirty || e0.base === v.saved_at)) return;   // keep unsaved work; nothing to do when it is the version already shown
   const rings = {}; for (const nm in (v.rings || {})) rings[nm] = fromAligned(v.rings[nm]);
-  edits[k] = newEdit(rings, (v.nodes || []).map(n => [(n.x - AX0) / RS, (n.y - AY0) / RS]), v.saved_at, v.node_set);
+  edits[k] = newEdit(rings, v.node_set ? (v.nodes || []).map(n => [(n.x - AX0) / RS, (n.y - AY0) / RS]) : baseNodes(k), v.saved_at, v.node_set);
   if (k === curKey() && !(k in notes)) $("#ed-note").value = v.note || "";
 }
 function bodyOf(k, scope) {
@@ -868,7 +872,7 @@ function draw() {
   const late = !!(xk && ed && ed.dirty && xk.saved_at !== ed.base);
   $("#info").replaceChildren(
     el("span", {}, (xk && isLocal(k) ? "Fix for this section only: " : "Key section: "), el("b", { text: xk ? "saved " + when(xk.saved_at) + (xk.by ? " by " + xk.by : "") + (uns ? "; your changes are not saved yet" : "") : uns ? "not saved yet" : "no" })),
-    el("span", {}, "Focus point: ", el("b", { text: ed && ed.nodeSet ? "placed by hand; the plan uses it" + (uns ? " once saved" : "") : "the plan's rule chooses it (drag it in Edit to place it yourself)" })),
+    el("span", {}, "Focus point: ", el("b", { text: ed && ed.nodeSet ? "placed by hand; the plan uses it" + (uns ? " once saved" : "") : autoNodes[k] ? "the plan's automatic choice" + (autoMade ? " (" + autoMade + ")" : "") + "; drag it in Edit only if it looks wrong" : "the plan's rule chooses it when the plan is built; the dot is the earlier plan's point" })),
     ...(late ? [el("span", {}, el("b", { class: "warn", text: (xk.by || "Someone else") + " saved this section after you started changing it. When you save, you will be asked which version to keep." }))] : []),
     el("span", {}, "Outlines shown: ", el("b", { text: propagationSource(k).text })),
     ...(CONFIG.node_roi ? [el("span", {}, "Focus node on the " + CONFIG.node_roi + ": ", el("b", { text: on === null ? "n/a" : on ? "yes" : "NO" }))] : []));
@@ -1253,7 +1257,7 @@ function build() {
   $("#save-all").addEventListener("click", saveAll);
   $("#ed-node-rule").addEventListener("click", () => {   // the plan's rule chooses the focus point again
     const k = curKey(), ed = ensureEdit(k); snapshot(ed);
-    ed.nodes = GEO[k].nodes.map(n => n.r.slice()); ed.nodeSet = false; ed.dirty = editJson(ed) !== ed.clean;
+    ed.nodes = baseNodes(k); ed.nodeSet = false; ed.dirty = editJson(ed) !== ed.clean;
     say(k + ": the plan will choose the focus point. Save to keep this."); draw();
   });
   $("#ed-undo").addEventListener("click", () => { undoEdit(); cv.focus({ preventScroll: true }); });
@@ -1368,6 +1372,13 @@ pending.then(d => {
     $("#db-status").textContent = db.pdCurrent ? "Can't reach the saved key sections right now (" + errText(e) + "); trying again. Your changes on this page are kept."
                                                : "Lost the connection (" + ((e && e.code) || "error") + "). Reload the page.";
   });
+  db.collection("auto_nodes").onSnapshot(snap => {     // the builder's automatic focus points, refreshed as key sections change
+    autoNodes = {}; let made = "";
+    for (const d of snap.docs) { const v = d.data(); if (v && Array.isArray(v.nodes)) { autoNodes[d.id] = v.nodes; if (v.made_at > made) made = v.made_at; } }
+    try { autoMade = made ? new Date(made).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""; } catch (_) { autoMade = made; }
+    for (const k in edits) { const e = edits[k]; if (e && !e.dirty && !e.nodeSet) { e.nodes = baseNodes(k); e.clean = editJson(e); } }
+    draw();
+  }, () => {});
   db.collection("key_suggest").onSnapshot(snap => { const d = snap.docs.find(x => x.id === "latest"); suggest = d ? d.data() : null; renderSuggest(); }, () => {});
   draw();
 }).catch(() => { $("#db-status").textContent = "Key sections cannot be saved in this view."; });
@@ -1670,12 +1681,13 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
     document.body.append(s);
   }
   function makeDb(wafer) {
-    const subs = { exemplars: [], key_suggest: [] };
+    const subs = { exemplars: [], key_suggest: [], auto_nodes: [] };
     const doc = (id, data) => ({ id, data: () => data });
     async function pull(name) {
       if (!subs[name].length) return;
       let docs;
       if (name === "exemplars") docs = (await getAll("pd_exemplars?select=key,doc&wafer=eq." + enc(wafer))).map(r => doc(r.key, r.doc));
+      else if (name === "auto_nodes") docs = (await getAll("pd_auto_nodes?select=key,nodes,rule,made_at&wafer=eq." + enc(wafer))).map(r => doc(r.key, r));
       else docs = (await api("GET", "pd_suggest?select=doc&wafer=eq." + enc(wafer))).map(r => doc("latest", r.doc));
       for (const s of subs[name]) s.cb({ docs });
     }
