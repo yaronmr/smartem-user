@@ -75,6 +75,8 @@ p { margin: 0 }
 .keymarks { position: relative; height: 12px; margin: -2px 58px 0 62px }
 .keymarks button { position: absolute; top: 0; width: 4px; height: 12px; padding: 0; border: 0; border-radius: 1px; transform: translateX(-2px); background: var(--accent) }
 .keymarks button.partial { background: #d98a00 }
+.keymarks button.local { background: #7b5cd6; height: 8px; top: 4px }
+.st.local { color: #7b5cd6; font-weight: 600 }
 .keymarks button.unsaved { background: #c2185b; height: 7px; top: 5px; width: 6px; transform: translateX(-3px) }
 .keylist { display: grid; gap: 4px; max-height: 220px; overflow: auto; font-size: 13px }
 .keyrow { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center }
@@ -275,7 +277,8 @@ button.pd-alert { border-color: var(--warn, #b45309); color: var(--warn, #b45309
           <div class="bt-status">Drag on the picture to move the outlines; hold Alt and drag to turn them. Shift + arrow keys nudge. Hold Space and drag to move the picture instead. The mouse wheel and the arrow keys still change the section, and Move stays on, so you can go through the sections and place each one.</div>
           <div class="bt-row"><button type="button" class="ghost" id="mv-done">Done moving</button></div>
         </div>
-        <div class="bt-row"><button type="button" id="ed-save" disabled title="Ctrl + S">Save as key section</button><button type="button" class="ghost" id="ed-undo" disabled title="Ctrl + Z">Undo</button></div>
+        <div class="bt-row"><button type="button" id="ed-save" disabled title="Ctrl + S. The sections around it are blended from it">Save as key section</button><button type="button" class="ghost" id="ed-save-local" disabled title="Fix only this section; the sections around it keep following the key sections">Save for this section only</button><button type="button" class="ghost" id="ed-undo" disabled title="Ctrl + Z">Undo</button></div>
+        <div class="bt-row"><button type="button" class="ghost" id="ed-node-rule" hidden title="Forget where you put the focus point on this section; the plan's rule chooses it">Let the plan choose the focus point</button></div>
         <input type="text" id="ed-note" placeholder="Note on this section (optional, saved with it)" aria-label="Note on this section">
         <div id="ed-status" role="status" aria-live="polite"></div>
         <div class="bt-row"><button type="button" class="ghost" id="ed-back" hidden></button><button type="button" class="ghost" id="ed-next" hidden></button></div>
@@ -414,14 +417,18 @@ function fromAligned(flat) { const out = []; for (let i = 0; i + 1 < flat.length
 const edits = {}, exemplars = {};
 let editing = false, grab = null, drawing = null, moving = false, hideAll = false, lastGone = null, saving = false, saveErr = "";
 const notes = {};   // section key -> note text typed here and not saved yet
-const editJson = e => JSON.stringify({ rings: e.rings, nodes: e.nodes });
-function newEdit(rings, nodes, base) {   // base: saved_at of the key section this edit started from (null: none); mv: [dx, dy, degrees] moved here
-  const e = { rings, nodes, dirty: false, undo: [], orig: snapOrig(rings), base, mv: [0, 0, 0] }; e.clean = editJson(e); return e;
+const editJson = e => JSON.stringify({ rings: e.rings, nodes: e.nodes, ns: !!e.nodeSet });
+const isLocal = x => !!(exemplars[x] && exemplars[x].scope === "local");   // a fix for that one section: not used to blend others
+const scopeOf = k => isLocal(k) ? "local" : "key";
+function newEdit(rings, nodes, base, nodeSet) {   // base: saved_at of the key section this edit started from (null: none); mv: [dx, dy, degrees] moved here
+  // nodeSet: the person placed the focus point here themselves (the plan then uses it); otherwise the plan's rule chooses
+  const e = { rings, nodes, dirty: false, undo: [], orig: snapOrig(rings), base, mv: [0, 0, 0], nodeSet: !!nodeSet }; e.clean = editJson(e); return e;
 }
 const noteOf = k => k in notes ? notes[k] : ((exemplars[k] || {}).note || "");
 const isUnsaved = k => !!((edits[k] && edits[k].dirty) || (exemplars[k] && k in notes && notes[k].trim() !== (exemplars[k].note || "")));
 const unsavedKeys = () => KEYS.filter(isUnsaved);
 const canSave = k => !!db && !READ_ONLY && isUnsaved(k);
+const canRescope = (k, scope) => !!db && !READ_ONLY && !!exemplars[k] && scope !== scopeOf(k);   // key section <-> this section only
 function ringPts(k, nm) {   // what the section shows: your edit or key section, else the propagated outline, else the plan
   const e = edits[k]; if (e && (e.dirty || exemplars[k]) && e.rings[nm]) return e.rings[nm];
   const p = propagatedRing(k, nm); if (p) return p;
@@ -435,10 +442,10 @@ function ensureEdit(k) {
   }
   return edits[k];
 }
-function snapshot(e) { e.undo.push(JSON.stringify({ rings: e.rings, nodes: e.nodes, mv: e.mv })); if (e.undo.length > 50) e.undo.shift(); clearBack(); }
+function snapshot(e) { e.undo.push(JSON.stringify({ rings: e.rings, nodes: e.nodes, mv: e.mv, ns: !!e.nodeSet })); if (e.undo.length > 50) e.undo.shift(); clearBack(); }
 function undoEdit() {
   const ed = edits[curKey()]; if (!ed || !ed.undo.length || brushing) return false;
-  const s = JSON.parse(ed.undo.pop()); ed.rings = s.rings; ed.nodes = s.nodes; ed.mv = s.mv || [0, 0, 0]; ed.dirty = editJson(ed) !== ed.clean;
+  const s = JSON.parse(ed.undo.pop()); ed.rings = s.rings; ed.nodes = s.nodes; ed.mv = s.mv || [0, 0, 0]; ed.nodeSet = !!s.ns; ed.dirty = editJson(ed) !== ed.clean;
   if (moving) moveRead(); draw(); return true;
 }
 function applyExemplar(k, v) {
@@ -448,10 +455,10 @@ function applyExemplar(k, v) {
   const e0 = edits[k];
   if (e0 && (e0.dirty || e0.base === v.saved_at)) return;   // keep unsaved work; nothing to do when it is the version already shown
   const rings = {}; for (const nm in (v.rings || {})) rings[nm] = fromAligned(v.rings[nm]);
-  edits[k] = newEdit(rings, (v.nodes || []).map(n => [(n.x - AX0) / RS, (n.y - AY0) / RS]), v.saved_at);
+  edits[k] = newEdit(rings, (v.nodes || []).map(n => [(n.x - AX0) / RS, (n.y - AY0) / RS]), v.saved_at, v.node_set);
   if (k === curKey() && !(k in notes)) $("#ed-note").value = v.note || "";
 }
-function bodyOf(k) {
+function bodyOf(k, scope) {
   const e = edits[k];
   const body = { z: GEO[k].z, section_id: GEO[k].section_id, base_draft: CONFIG.base_draft, frame: CONFIG.frame_text,
                  rings: {}, nodes: e.nodes.map(p => ({ x: Math.round((p[0] * RS + AX0) * 10) / 10, y: Math.round((p[1] * RS + AY0) * 10) / 10 })),
@@ -460,15 +467,18 @@ function bodyOf(k) {
   body.edited = {};   // per outline: redrawn or moved by the user (now or in an earlier save of this key), or saved as shown
   for (const nm in e.rings) body.edited[nm] = (exemplars[k] && ringDrawn(exemplars[k], nm) === true) || !e.orig || JSON.stringify(e.rings[nm]) !== e.orig[nm];
   if (CONFIG.user_label) body.by = CONFIG.user_label;
+  if (scope === "local") body.scope = "local";   // absent: a key section (the sections around it are blended from it)
+  if (e.nodeSet) body.node_set = true;             // the plan uses this focus point instead of choosing one
   return body;
 }
-async function saveKey(k, interactive) {   // "saved" | "conflict" | "cancel" | "error" (saveErr says why)
-  const e = edits[k]; if (!e || !canSave(k)) return "cancel";
+async function saveKey(k, interactive, scope) {   // "saved" | "conflict" | "cancel" | "error" (saveErr says why)
+  scope = scope || scopeOf(k);
+  const e = edits[k]; if (!e || !(canSave(k) || canRescope(k, scope))) return "cancel";
   // The write itself checks that the server still holds the version this edit started from (e.base), so a save by
   // someone else in between is never overwritten silently. Page databases without that check simply overwrite.
   let base = e.base == null ? null : e.base;
   for (let round = 0; round < 3; round++) {
-    const body = bodyOf(k);
+    const body = bodyOf(k, scope);
     try { await db.doc("exemplars/" + k).set(body, { base }); }
     catch (err) {
       if (err.code !== "conflict") { saveErr = errText(err); return "error"; }
@@ -503,15 +513,16 @@ function offerNext(k) {
   b.hidden = !nx; if (!nx) return;
   b.textContent = "Next to correct: " + nx + " →"; b.onclick = () => { go(KEYS.indexOf(nx)); cv.focus({ preventScroll: true }); };
 }
-async function saveExemplar() {
-  const k = curKey();
+async function saveExemplar(scope) {   // "key" (the sections around it follow) or "local" (this section only); default: as saved before
+  const k = curKey(); if (scope !== "key" && scope !== "local") scope = scopeOf(k);
   if (READ_ONLY) { say("You have view-only access, so nothing can be saved."); return; }
   if (brushing) { say("Finish the brush first: Done: make outline, or Cancel. Then save."); return; }
   if (drawing) { say("Finish the outline you are drawing first (Enter), or press Esc. Then save."); return; }
-  if (saving || !canSave(k)) { if (!saving && db) say(k + ": nothing to save; change an outline or the node first."); return; }
-  saving = true; saveErr = ""; $("#ed-save").disabled = true; say("Saving " + k + "…");
-  const r = await saveKey(k, true); saving = false;
-  if (r === "saved") { say(k + " saved as a key section."); offerNext(k); }
+  if (saving || !(canSave(k) || canRescope(k, scope))) { if (!saving && db) say(k + ": nothing to save; change an outline or the focus point first."); return; }
+  if (!exemplars[k]) ensureEdit(k);
+  saving = true; saveErr = ""; $("#ed-save").disabled = true; $("#ed-save-local").disabled = true; say("Saving " + k + "…");
+  const r = await saveKey(k, true, scope); saving = false;
+  if (r === "saved") { say(scope === "local" ? k + " saved for this section only. The sections around it still follow the key sections." : k + " saved as a key section."); offerNext(k); }
   else if (r === "error") say(k + " was NOT saved: " + saveErr + ". Your changes are still here; press Save again.");
   else if (saveErr === "took") say(k + ": took the version saved by the other person; your changes were discarded.");
   else say(k + " was not saved; your changes are still here.");
@@ -725,10 +736,10 @@ function applyBlended(bl, planRing) {
   return removeLoops(despike(removeLoops(out)));
 }
 function propagationSource(k) {
-  if (exemplars[k]) return { kind: "exemplar", text: "your key section", parts: [] };
+  if (exemplars[k]) return { kind: "exemplar", text: isLocal(k) ? "your fix for this section only" : "your key section", parts: [] };
   if (edits[k] && edits[k].dirty) return { kind: "edit", text: "your unsaved edit", parts: [] };
   if (!$("#p-on").checked) return { kind: "plan", text: "plan", parts: [] };
-  const ex = KEYS.filter(x => exemplars[x]); if (!ex.length) return { kind: "plan", text: "plan (no key sections yet)", parts: [] };
+  const ex = KEYS.filter(x => exemplars[x] && !isLocal(x)); if (!ex.length) return { kind: "plan", text: "plan (no key sections yet)", parts: [] };
   const zi0 = KEYS.indexOf(k); let lo = null, hi = null;
   for (const x of ex) { const xi = KEYS.indexOf(x); if (xi < zi0) lo = x; else if (xi > zi0 && hi === null) hi = x; }
   const beyond = $("#p-beyond").value, parts = [];
@@ -829,7 +840,9 @@ function draw() {
     const rad = (view === "region" ? 25 / PX_UM / RS : 25 / PX_UM * g.wscale) * zoom;
     for (const n of npts) { const q = toCanvas(n); ctx.strokeStyle = COLORS.node; ctx.globalAlpha = 0.7; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(q[0], q[1], rad, 0, 2 * Math.PI); ctx.stroke(); ctx.globalAlpha = 1; }
   }
-  if ($("#o-node").checked) for (const n of npts) { const q = toCanvas(n); ctx.beginPath(); ctx.arc(q[0], q[1], editing ? 6 : 4.5, 0, 2 * Math.PI); ctx.fillStyle = COLORS.node; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = "#062a33"; ctx.stroke(); }
+  const byHand = !!(edits[k] && edits[k].nodeSet);   // a focus point placed by hand gets a white ring
+  if ($("#o-node").checked) for (const n of npts) { const q = toCanvas(n); ctx.beginPath(); ctx.arc(q[0], q[1], editing ? 6 : 4.5, 0, 2 * Math.PI); ctx.fillStyle = COLORS.node; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = "#062a33"; ctx.stroke();
+    if (byHand) { ctx.beginPath(); ctx.arc(q[0], q[1], (editing ? 6 : 4.5) + 4, 0, 2 * Math.PI); ctx.lineWidth = 2; ctx.strokeStyle = "#ffffff"; ctx.stroke(); } }
   if ($("#o-bar").checked) {
     const um = view === "region" ? (zoom >= 3 ? 5 : 20) : 200, len = (view === "region" ? um / PX_UM / RS : um / PX_UM * g.wscale) * zoom;
     ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(10, HH - 34, len + 16, 26); ctx.fillStyle = "#fff"; ctx.fillRect(18, HH - 18, len, 4);
@@ -840,16 +853,19 @@ function draw() {
   $("#hud-r").textContent = view === "region" ? "region · " + Math.round(1000 * PX_UM * RS) + " nm/px" : "whole section";
   $("#zread").textContent = k + " of " + KEYS[KEYS.length - 1];
   $("#zoom-read").textContent = (Math.round(zoom * 10) / 10) + "×";
-  const ex = KEYS.filter(x => exemplars[x]), on = nodeOnRoi(k), xk = exemplars[k], ed = edits[k], uns = isUnsaved(k);
+  const ex = KEYS.filter(x => exemplars[x] && !isLocal(x)), on = nodeOnRoi(k), xk = exemplars[k], ed = edits[k], uns = isUnsaved(k);
   const late = !!(xk && ed && ed.dirty && xk.saved_at !== ed.base);
   $("#info").replaceChildren(
-    el("span", {}, "Key section: ", el("b", { text: xk ? "saved " + when(xk.saved_at) + (xk.by ? " by " + xk.by : "") + (uns ? "; your changes are not saved yet" : "") : uns ? "not saved yet" : "no" })),
+    el("span", {}, (xk && isLocal(k) ? "Fix for this section only: " : "Key section: "), el("b", { text: xk ? "saved " + when(xk.saved_at) + (xk.by ? " by " + xk.by : "") + (uns ? "; your changes are not saved yet" : "") : uns ? "not saved yet" : "no" })),
+    el("span", {}, "Focus point: ", el("b", { text: ed && ed.nodeSet ? "placed by hand; the plan uses it" + (uns ? " once saved" : "") : "the plan's rule chooses it (drag it in Edit to place it yourself)" })),
     ...(late ? [el("span", {}, el("b", { class: "warn", text: (xk.by || "Someone else") + " saved this section after you started changing it. When you save, you will be asked which version to keep." }))] : []),
     el("span", {}, "Outlines shown: ", el("b", { text: propagationSource(k).text })),
     ...(CONFIG.node_roi ? [el("span", {}, "Focus node on the " + CONFIG.node_roi + ": ", el("b", { text: on === null ? "n/a" : on ? "yes" : "NO" }))] : []));
   $("#p-info").replaceChildren(el("span", {}, "Key sections: ", el("b", { text: ex.length ? ex.join(", ") : "none yet" })));
   $("#saved-ex").textContent = ex.length ? ex.length + " key section" + (ex.length === 1 ? "" : "s") + " saved" : "no key sections saved yet";
-  $("#ed-save").disabled = saving || !canSave(k);
+  $("#ed-save").disabled = saving || !(canSave(k) || canRescope(k, "key"));
+  $("#ed-save-local").disabled = saving || !(canSave(k) || canRescope(k, "local"));
+  $("#ed-node-rule").hidden = READ_ONLY || !(ed && ed.nodeSet);
   $("#ed-undo").disabled = !(ed && ed.undo.length) || !!brushing;
   $("#ed-discard").disabled = !uns;
   $("#ed-remove").disabled = !xk || !db || READ_ONLY;
@@ -1156,10 +1172,12 @@ function renderKeys() {
       if (!d) partial = true;
       row.append(el("span", { class: "st" + (d ? "" : " shown"), text: nm + ": " + (d ? "drawn" : "as shown" + (guess ? "?" : "")) }));
     }
+    if (isLocal(k)) row.append(el("span", { class: "st local", text: "this section only" }));
+    if (doc.node_set) row.append(el("span", { class: "st", text: "focus point by hand" }));
     row.append(el("span", { class: "st", text: when(doc.saved_at) + (doc.by ? ", " + doc.by : "") }));
     list.append(row);
-    const uns = isUnsaved(k);
-    tick(k, (partial ? "partial" : "") + (uns ? " unsaved" : ""), "Key section " + k + (partial ? ": an outline was saved as shown" : "") + (uns ? "; your changes are not saved yet" : ""));
+    const uns = isUnsaved(k), loc = isLocal(k);
+    tick(k, (loc ? "local" : partial ? "partial" : "") + (uns ? " unsaved" : ""), (loc ? "Fix for this section only: " : "Key section ") + k + (partial && !loc ? ": an outline was saved as shown" : "") + (uns ? "; your changes are not saved yet" : ""));
   }
 }
 function wireBrush() {
@@ -1220,7 +1238,13 @@ function build() {
   $("#jump").addEventListener("change", e => { const i = KEYS.indexOf(e.target.value); if (i >= 0) { go(i); cv.focus({ preventScroll: true }); } });
   $("#next-node").addEventListener("click", () => nextWhere(k => nodeOnRoi(k) === false));
   $("#ed-toggle").addEventListener("click", () => setEditing(!editing));
-  $("#ed-save").addEventListener("click", saveExemplar); $("#save-all").addEventListener("click", saveAll);
+  $("#ed-save").addEventListener("click", () => saveExemplar("key")); $("#ed-save-local").addEventListener("click", () => saveExemplar("local"));
+  $("#save-all").addEventListener("click", saveAll);
+  $("#ed-node-rule").addEventListener("click", () => {   // the plan's rule chooses the focus point again
+    const k = curKey(), ed = ensureEdit(k); snapshot(ed);
+    ed.nodes = GEO[k].nodes.map(n => n.r.slice()); ed.nodeSet = false; ed.dirty = editJson(ed) !== ed.clean;
+    say(k + ": the plan will choose the focus point. Save to keep this."); draw();
+  });
   $("#ed-undo").addEventListener("click", () => { undoEdit(); cv.focus({ preventScroll: true }); });
   $("#ed-discard").addEventListener("click", discardEdit); $("#ed-remove").addEventListener("click", removeKey); $("#ed-back").addEventListener("click", putBack);
   $("#ed-note").addEventListener("input", e => { const k = curKey(), v = e.target.value; if (v.trim() === ((exemplars[k] || {}).note || "")) delete notes[k]; else notes[k] = v; draw(); });
@@ -1276,7 +1300,7 @@ function build() {
       else applyMove(grab.ed, b, q[0] - grab.p0[0], q[1] - grab.p0[1], 0);
       grab.moved = true; moveRead(); draw(); return;
     }
-    if (grab) { const ed = edits[curKey()], q = toRegion(p); if (grab.node !== undefined) ed.nodes[grab.node] = q; else ed.rings[grab.nm][grab.i] = q; ed.dirty = true; draw(); return; }
+    if (grab) { const ed = edits[curKey()], q = toRegion(p); if (grab.node !== undefined) { ed.nodes[grab.node] = q; ed.nodeSet = true; } else ed.rings[grab.nm][grab.i] = q; ed.dirty = true; draw(); return; }
     if (!drag) return; cx = drag.cx - (p[0] - drag.p[0]) / zoom; cy = drag.cy - (p[1] - drag.p[1]) / zoom; draw();
   });
   const end = () => {
