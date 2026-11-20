@@ -121,6 +121,10 @@ dialog > * + * { margin-top: 10px }
 .pd-list { display: grid; gap: 6px; font-size: 14px }
 .pd-list .row > span:first-child { margin-right: auto; overflow-wrap: anywhere }
 .pd-list select { width: auto }
+.pd-build { border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; display: grid; gap: 6px }
+.pd-build pre { max-height: 300px; overflow: auto; white-space: pre-wrap; font-size: 12px; margin: 0 }
+.pd-badge { font: 600 12px/1 ui-monospace, Consolas, monospace; border: 1px solid currentColor; border-radius: 4px; padding: 3px 6px; margin-right: 8px }
+.pd-badge.approved { color: var(--ok, #15803d) } .pd-badge.ready { color: var(--warn, #b45309) } .pd-badge.rejected, .pd-badge.superseded { color: var(--muted) }
 #pd-people { width: min(680px, 94vw) }
 #pd-people h3 { font-size: 14px }
 button.pd-alert { border-color: var(--warn, #b45309); color: var(--warn, #b45309); font-weight: 600 }
@@ -181,6 +185,13 @@ button.pd-alert { border-color: var(--warn, #b45309); color: var(--warn, #b45309
   <p class="hint">"Can view" opens every wafer but cannot save. "Can view and edit" can also save and remove key sections. Plan Desk sends no email in either direction: tell people yourself when you have given them access.</p>
   <div class="row"><button type="button" class="ghost" id="pd-people-close">Close</button></div>
 </dialog>
+<dialog id="pd-builds">
+  <h2>Builds for <span id="pd-builds-wafer"></span></h2>
+  <p class="hint">A build is an imaging plan made from the saved key sections. The support PC can import a build only after an administrator approves it here, and only one build per wafer is approved at a time (approving a newer one replaces the older). Approving moves nothing at the microscope: the operator still opens the plan in the GUI and checks it there.</p>
+  <p class="saved" id="pd-builds-msg" role="status"></p>
+  <div id="pd-builds-list" class="pd-list"></div>
+  <div class="row"><button type="button" class="ghost" id="pd-builds-close">Close</button></div>
+</dialog>
 <dialog id="pd-relogin">
   <h2>Sign in again</h2>
   <p>Your sign-in has ended. Nothing on this page is lost: enter the password for <b id="pd-relogin-email"></b> and carry on.</p>
@@ -189,7 +200,7 @@ button.pd-alert { border-color: var(--warn, #b45309); color: var(--warn, #b45309
     <div class="row"><button type="submit">Sign in</button><button type="button" class="ghost" id="pd-relogin-out">Sign out instead</button><span class="saved" id="pd-relogin-msg" role="status"></span></div>
   </form>
 </dialog>
-<div id="pd-bar" hidden><a href="help.html" target="_blank" rel="noopener">Help</a><span id="pd-bar-who"></span><button type="button" class="ghost" id="pd-bar-people" hidden>People</button><button type="button" class="ghost" id="pd-bar-wafers">Wafers</button><button type="button" class="ghost" id="pd-bar-out">Sign out</button></div>
+<div id="pd-bar" hidden><a href="help.html" target="_blank" rel="noopener">Help</a><span id="pd-bar-who"></span><button type="button" class="ghost" id="pd-bar-builds" hidden>Builds</button><button type="button" class="ghost" id="pd-bar-people" hidden>People</button><button type="button" class="ghost" id="pd-bar-wafers">Wafers</button><button type="button" class="ghost" id="pd-bar-out">Sign out</button></div>
 <div id="pd-editor" hidden>
 <div class="wrap">
   <header class="top">
@@ -1513,7 +1524,8 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
   }
   $id("pd-wait-check").addEventListener("click", () => afterLogin().catch(fail));
   let waitT = 0, peopleT = 0;
-  const ROLE_TEXT = { viewer: "can view", editor: "can view and edit", admin: "administrator" };
+  const ROLE_TEXT = { viewer: "can view", editor: "can view and edit", admin: "administrator", pc: "support PC (reads approved builds)" };
+  let peopleById = {};
   function openPeople() { $id("pd-people-msg").textContent = ""; loadPeople().catch(e => { $id("pd-people-msg").textContent = "Could not read the list: " + e.message; }); $id("pd-people").showModal(); }
   $id("pd-people-open").addEventListener("click", openPeople); $id("pd-bar-people").addEventListener("click", openPeople);
   $id("pd-people-close").addEventListener("click", () => $id("pd-people").close());
@@ -1522,6 +1534,7 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
     const [reqs, mems] = await Promise.all([
       api("GET", "pd_requests?select=user_id,email,display_name,requested_at&order=requested_at.asc"),
       api("GET", "pd_access?select=user_id,email,display_name,role,added_at&order=added_at.asc")]);
+    peopleById = Object.fromEntries(mems.map(m => [m.user_id, m.display_name || m.email]));
     const waiting = reqs.filter(r => !mems.some(m => m.user_id === r.user_id)).length;
     const label = "People" + (waiting ? " (" + waiting + " waiting)" : "");
     $id("pd-people-open").textContent = label; $id("pd-bar-people").textContent = label;
@@ -1551,7 +1564,7 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
     }) : [row("Nobody is waiting.")]));
     $id("pd-mem").replaceChildren(...mems.map(m => {
       if (m.user_id === me.id) return row(who(m) + " · " + ROLE_TEXT[m.role] + " (you)");
-      const sel = roleSel(m.role, ["viewer", "editor", "admin"]);
+      const sel = roleSel(m.role, m.role === "pc" ? ["pc", "viewer"] : ["viewer", "editor", "admin"]);
       sel.addEventListener("change", () => {
         const to = sel.value;
         if (to === "admin" && !confirm("Make " + (m.email || "this person") + " an administrator? Administrators can give and remove access.")) { sel.value = m.role; return; }
@@ -1560,6 +1573,56 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
       return row(who(m), sel,
         btn("Remove", () => { if (confirm("Remove the access of " + (m.email || "this person") + "? They will no longer be able to open the plans.")) run(() => api("DELETE", "pd_access?user_id=eq." + enc(m.user_id), null, "return=minimal"), "Removed " + (m.email || "the member") + "."); }, true));
     }));
+  }
+
+  // ---------- builds: imaging plans made from the key sections; an administrator approves one for the support PC ----------
+  let buildsWafer = "", buildsT = 0;
+  const STATUS_TEXT = { ready: "waiting for approval", approved: "approved for imaging", rejected: "rejected", superseded: "replaced by a newer approval" };
+  function openBuilds() { $id("pd-builds-msg").textContent = ""; loadBuilds().catch(e => { $id("pd-builds-msg").textContent = "Could not read the builds: " + e.message; }); $id("pd-builds").showModal(); }
+  $id("pd-bar-builds").addEventListener("click", openBuilds);
+  $id("pd-builds-close").addEventListener("click", () => $id("pd-builds").close());
+  const when = t => { if (!t) return ""; try { return new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); } catch (_) { return t; } };
+  async function loadBuilds() {
+    const rows = await api("GET", "pd_builds?select=*&wafer=eq." + enc(buildsWafer) + "&order=built_at.desc");
+    $id("pd-bar-builds").hidden = false;
+    const admin = member.role === "admin";
+    const waiting = rows.filter(b => b.status === "ready").length;
+    const label = "Builds" + (waiting ? " (" + waiting + " to review)" : "");
+    $id("pd-bar-builds").textContent = label; $id("pd-bar-builds").classList.toggle("pd-alert", admin && !!waiting);
+    $id("pd-builds-wafer").textContent = buildsWafer;
+    const msg = $id("pd-builds-msg");
+    const mk = (tag, text, cls) => { const e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; };
+    const decide = async (b, to, note) => {               // only if nobody decided meanwhile (the same check as key sections)
+      msg.textContent = "…";
+      try {
+        const out = await api("PATCH", "pd_builds?id=eq." + enc(b.id) + "&status=eq." + enc(b.status), { status: to, decision_note: note || null }, "return=representation");
+        msg.textContent = !out.length ? "Not changed: someone else decided on this build meanwhile. The list below is current."
+          : to === "approved" ? b.draft_id + " is approved for imaging. The support PC can import it now (any earlier approved build of " + buildsWafer + " is replaced)."
+          : b.draft_id + ": " + STATUS_TEXT[to] + ".";
+      } catch (e) { msg.textContent = "Didn't work: " + e.message; }
+      loadBuilds().catch(() => {});
+    };
+    $id("pd-builds-list").replaceChildren(...(rows.length ? rows.map(b => {
+      const c = b.checks || {}, box = mk("div", "", "pd-build");
+      const head = mk("div", "", "row"); head.append(mk("span", "", ""));
+      head.firstChild.append(mk("span", STATUS_TEXT[b.status] || b.status, "pd-badge " + b.status), mk("b", b.draft_id));
+      box.append(head);
+      const ks = c.key_sections, nk = Array.isArray(ks) ? ks.length : ks && typeof ks === "object" ? Object.keys(ks).length : null;
+      box.append(mk("div", "Built " + when(b.built_at) + (b.built_by ? " by " + b.built_by : "") + (nk != null ? " · from " + nk + " key sections" : "") + " · " + (b.files || []).length + ((b.files || []).length === 1 ? " file" : " files")));
+      if (c.status_text) box.append(mk("div", c.status_text, "hint"));
+      if (b.decided_at) box.append(mk("div", (b.status === "approved" ? "Approved " : b.status === "superseded" ? "Replaced " : "Decided ") + when(b.decided_at) + (peopleById[b.decided_by] ? " by " + peopleById[b.decided_by] : "") + (b.decision_note && b.status !== "superseded" ? ": " + b.decision_note : "")));
+      if (b.report) { const d = mk("details"); d.append(mk("summary", "Builder's report"), mk("pre", b.report)); box.append(d); }
+      if (admin && (b.status === "ready" || b.status === "approved")) {
+        const row = mk("div", "", "row"), note = mk("input"); note.type = "text"; note.placeholder = "Note (optional)"; note.setAttribute("aria-label", "Note");
+        const btn = (text, fn, ghost) => { const x = mk("button", text, ghost ? "ghost" : ""); x.type = "button"; x.addEventListener("click", fn); return x; };
+        if (b.status === "ready") row.append(note,
+          btn("Approve for imaging", () => { if (confirm("Approve " + b.draft_id + " for imaging? The support PC can then import it" + (rows.some(o => o.status === "approved") ? ", and the build approved now for " + buildsWafer + " is replaced" : "") + ".")) decide(b, "approved", note.value); }),
+          btn("Reject", () => decide(b, "rejected", note.value), true));
+        else row.append(note, btn("Withdraw approval", () => { if (confirm("Withdraw the approval of " + b.draft_id + "? The support PC can no longer import it (a copy it already imported stays on the PC).")) decide(b, "rejected", note.value); }, true));
+        box.append(row);
+      }
+      return box;
+    }) : [mk("div", "No builds yet. A build appears here when someone publishes one from the saved key sections.")]));
   }
 
   // signed out in the middle of work: sign in again on top of the page, nothing on it is lost
@@ -1591,12 +1654,16 @@ const PD_SUPABASE = {"url": "https://grssktwnssuhmiijkeik.supabase.co", "key": "
     const CONFIG = Object.assign({ title: w.title, meta: "", foot: "" }, w.config);
     if (!/^https:\/\//.test(CONFIG.img_base || "")) throw ApiError(500, { message: "wafer " + id + " has no https image address" });
     CONFIG.user_label = me.name || me.email.split("@")[0];      // written into each key section this person saves ("by")
-    CONFIG.read_only = member.role === "viewer";
+    CONFIG.read_only = !["editor", "admin"].includes(member.role);
     CONFIG.img_fail_hint = "The pictures come from a Harvard server that some browsers refuse (seen with Firefox). Open Plan Desk in Chrome or Edge. If the pictures still do not load, tell the person who invited you.";
     CONFIG.help_url = "help.html#picture";
     window.claude = { use: () => Promise.resolve(makeDb(id)) };
     $id("pd-shell").hidden = true; $id("pd-editor").hidden = false;
     const bar = $id("pd-bar"); bar.hidden = false;
+    if (member.role !== "pc") {                        // the PC reads approved builds with its own command, not here
+      buildsWafer = id; loadBuilds().catch(() => {});   // the button shows once pd_builds can be read
+      if (!buildsT) buildsT = setInterval(() => { if (!document.hidden && !$id("pd-builds").open) loadBuilds().catch(() => {}); }, 60000);
+    }
     $id("pd-bar-who").textContent = me.email + (CONFIG.read_only ? " (view only)" : "");
     const s = document.createElement("script");
     s.textContent = "const CONFIG = " + JSON.stringify(CONFIG) + ";\nconst GEO = " + JSON.stringify(GEO) + ";\n" + $id("pd-editor-src").textContent;
